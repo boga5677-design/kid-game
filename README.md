@@ -29,3 +29,13 @@ gradle assembleDebug
 
 APK 位置：
 `app/build/outputs/apk/debug/app-debug.apk`
+
+## GitHub Actions 修正版
+本專案不依賴 `gradlew`，GitHub Actions 會直接安裝 Gradle 8.7，並使用 JDK 17 建置。
+
+Workflow 建置指令：
+```bash
+gradle --no-daemon assembleDebug
+```
+
+完成後可在 Actions 的 Artifacts 下載 `KidsFocusMath-debug-apk`。
