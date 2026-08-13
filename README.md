@@ -1,41 +1,58 @@
-# 小小腦力樂園 Kids Focus Math Game
+# 小小腦力樂園 v0.3
 
-適合 5–7 歲幼童的 Android 學習遊戲原型。
+適合 5–7 歲幼童的 Android 專注力＋數學互動學習遊戲。
 
-## 目前包含
-- 找一找：視覺搜尋
-- 找一樣：圖形辨識
-- 顏色圖形：顏色＋形狀辨識
-- 迷宮：拖曳避障
-- 連連看：相同圖案配對
-- 數一數：1–10 數量概念
-- 數學小高手：基礎加減法
-- 記憶挑戰：短期記憶
+## v0.3 主要修正
 
-## 建置方式
-本專案附 GitHub Actions。
-推送到 GitHub 後，到 Actions 執行 **Build Android APK**，
-完成後下載 `KidsFocusMath-debug-apk`。
+- **全面放大介面**：改用 Android dp / sp 尺寸，不再用固定像素，手機上題目、方格、按鈕都更大。
+- **點選無反應修正**：多數按鈕改在 `ACTION_DOWN` 即時回應，並加入額外觸控容錯範圍。
+- **連連看重製**：
+  - 4 組大型配對卡片。
+  - 可直接從一張卡拖曳到另一張卡。
+  - 也可以「點第一張 → 點第二張」。
+  - 答對後會真的保留彩色連線。
+  - 顯示 0/4～4/4 進度。
+- **題目放大**：每頁都有大型白色題目卡片。
+- **朗讀題目**：進題後停 0.5 秒自動朗讀，並保留大型「朗讀題目・重播」按鈕。
+- **重新設計首頁**：
+  - 黑糖老師為中心主視覺。
+  - 偶貴老師、熊熊老師共同登場。
+  - 8 個遊戲直接從首頁點選。
+  - 星星、金幣、每日任務、寶箱、本週進度。
+- **桌面 App 圖示改為黑糖**：只使用玳瑁貓黑糖老師。
+- **互動回饋**：答對星星、音效、震動、畫面提示、慶祝星星動畫。
+- **學習紀錄**：星星、遊玩次數、難度會保存在手機本機。
+- **Java / Kotlin 均為 JVM 17**。
 
-本地環境：
-- JDK 17
-- Android SDK 35
-- Gradle 8.7
+## 遊戲
 
-執行：
-```bash
-gradle assembleDebug
-```
+1. 找一找
+2. 找一樣
+3. 顏色圖形
+4. 迷宮
+5. 連連看
+6. 數一數
+7. 數學小高手
+8. 記憶挑戰
 
-APK 位置：
-`app/build/outputs/apk/debug/app-debug.apk`
+## GitHub Actions
 
-## GitHub Actions 修正版
-本專案不依賴 `gradlew`，GitHub Actions 會直接安裝 Gradle 8.7，並使用 JDK 17 建置。
+本專案不依賴 `gradlew`，Actions 會安裝 Gradle 8.7：
 
-Workflow 建置指令：
 ```bash
 gradle --no-daemon assembleDebug
 ```
 
-完成後可在 Actions 的 Artifacts 下載 `KidsFocusMath-debug-apk`。
+建置成功後 Artifact 名稱：
+
+`kid-game-v0.3-interactive-debug-apk`
+
+APK：
+
+`app/build/outputs/apk/debug/app-debug.apk`
+
+## 預覽
+
+設計預覽圖放在：
+
+`docs/ui-preview.png`
