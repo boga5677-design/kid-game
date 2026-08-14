@@ -1,3 +1,8 @@
+## v0.5.1 build fix
+
+- 修正 `ScrollView.LayoutParams` 不存在造成的 Kotlin 編譯錯誤，改用 `FrameLayout.LayoutParams`。
+- `versionCode` 更新為 6，`versionName` 更新為 0.5.1。
+
 # 小小腦力樂園 Android v0.5
 
 這版以 `docs/approved-home-preview.png` 為首頁版型基準重做，先完成 Android；iOS 不在本版處理。
