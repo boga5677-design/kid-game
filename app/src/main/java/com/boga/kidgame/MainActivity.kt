@@ -162,8 +162,9 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         textSize = size
         setTextColor(color)
         this.gravity = gravity
-        setPadding(dp(6), dp(4), dp(6), dp(4))
-        includeFontPadding = false
+        setPadding(dp(6), dp(6), dp(6), dp(6))
+        includeFontPadding = true
+        setLineSpacing(0f, 1.0f)
         typeface = android.graphics.Typeface.create(
             "sans-serif-rounded",
             if (bold) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL
@@ -290,7 +291,7 @@ private fun showHome() {
 
     // 最上方只保留真正有意義的星星 / 寶箱進度。
     content.addView(makeTopStats(), LinearLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT, dp(58)
+        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
     ))
     content.addSpace(7)
 
@@ -306,7 +307,7 @@ private fun showHome() {
             0xFFF0F8D9.toInt(),
             0xFF58A815.toInt()
         ) { navigateTo(Screen.TreasureMap(MapFocus.DAILY)) },
-        LinearLayout.LayoutParams(0, dp(70), 1f).apply { marginEnd = dp(5) }
+        LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = dp(5) }
     )
     missionRow.addView(
         makeMissionCard(
@@ -316,7 +317,7 @@ private fun showHome() {
             0xFFFFF1D4.toInt(),
             0xFFE37500.toInt()
         ) { navigateTo(Screen.TreasureMap(MapFocus.CHEST)) },
-        LinearLayout.LayoutParams(0, dp(70), 1f).apply { marginStart = dp(5) }
+        LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(5) }
     )
     content.addView(missionRow)
     content.addSpace(6)
@@ -342,7 +343,7 @@ private fun showHome() {
         repeat(2) { col ->
             val index = row * 2 + col
             val tile = makeGameTile(gameValues[index])
-            val lp = LinearLayout.LayoutParams(0, dp(74), 1f)
+            val lp = LinearLayout.LayoutParams(0, dp(80), 1f)
             if (col == 0) lp.marginEnd = dp(5) else lp.marginStart = dp(5)
             line.addView(tile, lp)
         }
@@ -355,40 +356,41 @@ private fun showHome() {
     val english = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        setPadding(dp(14), dp(5), dp(14), dp(5))
+        setPadding(dp(14), dp(7), dp(14), dp(7))
         background = rounded(0xFFDFF3FF.toInt(), 22)
         elevation = dp(2).toFloat()
         isClickable = true
         isFocusable = true
         addView(text("ABC", 21f, 0xFF2879CB.toInt(), true),
-            LinearLayout.LayoutParams(dp(58), dp(42)))
+            LinearLayout.LayoutParams(dp(58), dp(46)))
         addView(text("英文小教室", 18f, brown, true,
             Gravity.START or Gravity.CENTER_VERTICAL).apply {
             maxLines = 1
             TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
                 this, 14, 19, 1, TypedValue.COMPLEX_UNIT_SP
             )
-        }, LinearLayout.LayoutParams(0, dp(42), 1f))
+        }, LinearLayout.LayoutParams(0, dp(46), 1f))
         addView(text("›", 27f, 0xFF2879CB.toInt(), true),
-            LinearLayout.LayoutParams(dp(34), dp(42)))
+            LinearLayout.LayoutParams(dp(34), dp(46)))
         setOnClickListener { navigateTo(Screen.EnglishHome) }
     }
     content.addView(english, LinearLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT, dp(50)
+        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
     ))
 
     content.addSpace(7)
 
-    val achievements = text("🏅 我的徽章　　已累積 ⭐ $stars", 16f, brown, true).apply {
+    val achievements = text("🏅 我的徽章　　已累積 ⭐ $stars", 16f, brown, true, Gravity.START or Gravity.CENTER_VERTICAL).apply {
         maxLines = 1
         TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
             this, 13, 17, 1, TypedValue.COMPLEX_UNIT_SP
         )
         background = rounded(0xFFFFE9A9.toInt(), 20)
+        minimumHeight = dp(50)
         setOnClickListener { navigateTo(Screen.Achievements) }
     }
     content.addView(achievements, LinearLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT, dp(46)
+        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
     ))
 }
 
@@ -398,7 +400,8 @@ private fun makeTopStats(): View {
         gravity = Gravity.CENTER_VERTICAL
         background = rounded(Color.WHITE, 24)
         elevation = dp(3).toFloat()
-        setPadding(dp(12), dp(5), dp(8), dp(5))
+        minimumHeight = dp(66)
+        setPadding(dp(12), dp(8), dp(8), dp(8))
 
         addView(text("小小腦力樂園", 20f, 0xFF4A2E1D.toInt(), true,
             Gravity.START or Gravity.CENTER_VERTICAL).apply {
@@ -406,33 +409,34 @@ private fun makeTopStats(): View {
             TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
                 this, 15, 21, 1, TypedValue.COMPLEX_UNIT_SP
             )
-        }, LinearLayout.LayoutParams(0, dp(46), 1f))
+        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
 
         addView(makeTopCounter(R.drawable.top_star, stars.toString()),
-            LinearLayout.LayoutParams(dp(82), dp(46)))
+            LinearLayout.LayoutParams(dp(86), ViewGroup.LayoutParams.WRAP_CONTENT))
 
         addView(makeTopCounter(
             R.drawable.mission_treasure,
             if (canOpenStarChest()) "OPEN" else "${starChestProgress()}/30"
-        ), LinearLayout.LayoutParams(dp(104), dp(46)))
+        ), LinearLayout.LayoutParams(dp(110), ViewGroup.LayoutParams.WRAP_CONTENT))
     }
 }
 
 private fun makeTopCounter(iconRes: Int, value: String): View {
     return LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
-        gravity = Gravity.CENTER
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(dp(2), dp(4), dp(2), dp(4))
         val iv = ImageView(this@MainActivity).apply {
             setImageResource(iconRes)
             scaleType = ImageView.ScaleType.FIT_CENTER
         }
         addView(iv, LinearLayout.LayoutParams(dp(32), dp(32)))
-        addView(text(value, 17f, 0xFF3B2417.toInt(), true).apply {
+        addView(text(value, 17f, 0xFF3B2417.toInt(), true, Gravity.START or Gravity.CENTER_VERTICAL).apply {
             maxLines = 1
             TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
                 this, 12, 18, 1, TypedValue.COMPLEX_UNIT_SP
             )
-        }, LinearLayout.LayoutParams(0, dp(38), 1f))
+        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
     }
 }
 
@@ -449,9 +453,10 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
             gravity = Gravity.CENTER_VERTICAL
             background = rounded(color, 23)
             elevation = dp(2).toFloat()
+            minimumHeight = dp(76)
             isClickable = true
             isFocusable = true
-            setPadding(dp(9), dp(7), dp(9), dp(7))
+            setPadding(dp(9), dp(8), dp(9), dp(8))
             setOnClickListener {
                 performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
                 onClick()
@@ -465,13 +470,14 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(dp(6), 0, 0, 0)
-                addView(text(title, 16f, 0xFF4A2E1D.toInt(), true, Gravity.START).apply {
+                addView(text(title, 16f, 0xFF4A2E1D.toInt(), true, Gravity.START or Gravity.CENTER_VERTICAL).apply {
                     maxLines = 1
-                    TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(this, 13, 17, 1, TypedValue.COMPLEX_UNIT_SP)
+                    TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(this, 12, 17, 1, TypedValue.COMPLEX_UNIT_SP)
                 }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
-                addView(text(value, 23f, valueColor, true, Gravity.START).apply {
+                addView(text(value, 22f, valueColor, true, Gravity.START or Gravity.CENTER_VERTICAL).apply {
                     maxLines = 1
-                }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.3f))
+                    TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(this, 16, 22, 1, TypedValue.COMPLEX_UNIT_SP)
+                }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.25f))
             }
             addView(words, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
         }
@@ -516,7 +522,8 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
             gravity = Gravity.CENTER_VERTICAL
             background = rounded(gameCardColor(game), 22, Color.WHITE, 2)
             elevation = dp(2).toFloat()
-            setPadding(dp(8), dp(6), dp(9), dp(6))
+            minimumHeight = dp(80)
+            setPadding(dp(8), dp(7), dp(9), dp(7))
             isClickable = true
             isFocusable = true
         }
@@ -802,41 +809,113 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
     private data class ShapeItem(val symbol: String, val color: Int, val target: Boolean)
 
     private fun buildColor(area: FrameLayout, q: TextView, fb: TextView) {
-        setQuestion(q, "請點出所有藍色圓形。")
-        val blue = 0xFF4D8FE8.toInt()
-        val red = 0xFFF05F68.toInt()
-        val green = 0xFF63B66B.toInt()
+        // v0.5.6：題目改成「固定輪替」而不是完全隨機。
+        // 這樣每一局一定會換題，不會剛好又抽到「藍色圓形」而看起來像沒更新。
+        // 輪替內容包含 5 種顏色 × 2 種圖形，並特別包含「藍色正方形」。
+        data class ColorSpec(val name: String, val value: Int)
+        data class ShapeSpec(val symbol: String, val name: String)
 
-        val items = MutableList(12) {
-            val circle = Random.nextBoolean()
-            val c = listOf(blue, red, green).random()
-            ShapeItem(if (circle) "●" else "■", c, circle && c == blue)
+        val colors = listOf(
+            ColorSpec("藍色", 0xFF4D8FE8.toInt()),
+            ColorSpec("紅色", 0xFFF05F68.toInt()),
+            ColorSpec("綠色", 0xFF63B66B.toInt()),
+            ColorSpec("黃色", 0xFFFFB63C.toInt()),
+            ColorSpec("紫色", 0xFF8A68D8.toInt())
+        )
+        val circle = ShapeSpec("●", "圓形")
+        val square = ShapeSpec("■", "正方形")
+
+        // 第一題刻意從「紅色圓形」開始，讓新版安裝後一眼就能確認題目已更新。
+        // 之後依序輪替，10 題一循環：
+        // 紅圓 → 綠方 → 黃圓 → 紫方 → 藍方 → 紅方 → 綠圓 → 黃方 → 紫圓 → 藍圓
+        val questionSequence = listOf(
+            colors[1] to circle,
+            colors[2] to square,
+            colors[3] to circle,
+            colors[4] to square,
+            colors[0] to square,
+            colors[1] to square,
+            colors[2] to circle,
+            colors[3] to square,
+            colors[4] to circle,
+            colors[0] to circle
+        )
+
+        val prefs = getSharedPreferences("kid_game_progress", MODE_PRIVATE)
+        val rawIndex = prefs.getInt("colorQuestionIndex", 0)
+        val index = ((rawIndex % questionSequence.size) + questionSequence.size) % questionSequence.size
+        val (targetColor, targetShape) = questionSequence[index]
+        prefs.edit().putInt("colorQuestionIndex", (index + 1) % questionSequence.size).apply()
+
+        val questionText = "請點出所有${targetColor.name}${targetShape.name}。"
+        setQuestion(q, questionText)
+
+        // 固定 3 個正確答案；其他 9 個一定不會和目標「顏色 + 圖形」完全相同。
+        val items = mutableListOf<ShapeItem>()
+        repeat(3) {
+            items += ShapeItem(targetShape.symbol, targetColor.value, true)
         }
-        if (items.none { it.target }) items[Random.nextInt(items.size)] = ShapeItem("●", blue, true)
+
+        while (items.size < 12) {
+            val color = colors.random()
+            val shape = if (Random.nextBoolean()) circle else square
+
+            if (color.value == targetColor.value && shape.symbol == targetShape.symbol) {
+                continue
+            }
+            items += ShapeItem(shape.symbol, color.value, false)
+        }
+        items.shuffle()
+
         var remaining = items.count { it.target }
 
         val grid = GridLayout(this).apply {
             columnCount = 3
             rowCount = 4
             setPadding(dp(6), dp(8), dp(6), dp(8))
+            isClickable = true
         }
-        area.addView(grid)
+        area.addView(
+            grid,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+        )
 
         items.forEach { item ->
             val b = optionButton(item.symbol, Color.WHITE).apply {
                 setTextColor(item.color)
+
+                // 明確確保所有方格（包含藍色正方形）都有可點擊狀態。
+                isClickable = true
+                isFocusable = true
+                isEnabled = true
+
                 setOnClickListener {
                     if (item.target) {
-                        visibility = View.INVISIBLE
+                        if (!isEnabled) return@setOnClickListener
+
+                        // 點過的正確答案只計一次，但仍留在畫面上淡化，
+                        // 不再使用 INVISIBLE，避免格子消失後版面看起來像「不能點」。
+                        isEnabled = false
+                        alpha = 0.24f
                         remaining--
+
                         tone.startTone(ToneGenerator.TONE_PROP_BEEP, 55)
+
                         if (remaining == 0) {
                             success(fb, "全部找到！ ⭐ +1")
-                            handler.postDelayed({ showGame(GameType.COLOR) }, 800)
+                            handler.postDelayed({ showGame(GameType.COLOR) }, 900)
+                        } else {
+                            feedback(fb, "答對了！還有 $remaining 個", true)
                         }
-                    } else wrong(fb)
+                    } else {
+                        wrong(fb)
+                    }
                 }
             }
+
             grid.addView(b, GridLayout.LayoutParams().apply {
                 width = 0
                 height = 0
