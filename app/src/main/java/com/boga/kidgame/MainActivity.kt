@@ -598,7 +598,7 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
         )
 
         val openGame: (View) -> Unit = { tappedView ->
-            FeedbackTap.haptic(tappedView)
+            tappedView.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
             speakChinese(game.title)
             navigateTo(Screen.Game(game))
         }

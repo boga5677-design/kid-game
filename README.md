@@ -128,3 +128,14 @@ v0.5.6 改成固定輪替 10 種題目：
 - 題目進入後仍約 0.5 秒自動朗讀。
 - 自動題目朗讀改用 TTS 佇列，避免把剛朗讀的遊戲名稱截斷。
 - 遊戲頁只保留「🔊 重播題目」喇叭按鈕。
+
+## v0.6.2 Build Fix
+
+- 修正 `MainActivity.kt:601` 的 `Unresolved reference: FeedbackTap`。
+- 改用 Android 原生：
+  `tappedView.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)`
+- 保留 v0.6.1 行為：
+  - 主畫面遊戲卡點一下直接朗讀卡片名稱並進入遊戲。
+  - 主畫面不顯示獨立喇叭。
+  - 遊戲頁僅保留「🔊 重播題目」。
+  - 題目進入後約 0.5 秒自動朗讀。
