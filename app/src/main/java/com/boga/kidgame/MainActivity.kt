@@ -558,10 +558,11 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
             gravity = Gravity.CENTER_VERTICAL
             background = rounded(gameCardColor(game), 22, Color.WHITE, 2)
             elevation = dp(2).toFloat()
-            minimumHeight = dp(70)
-            setPadding(dp(8), dp(5), dp(9), dp(5))
+            minimumHeight = dp(68)
+            setPadding(dp(8), dp(6), dp(10), dp(6))
             isClickable = true
             isFocusable = true
+            contentDescription = game.title
         }
 
         val icon = ImageView(this).apply {
@@ -569,44 +570,45 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
             scaleType = ImageView.ScaleType.CENTER_CROP
             background = rounded(Color.WHITE, 50)
             clipToOutline = true
+            contentDescription = game.title
         }
-        tile.addView(icon, LinearLayout.LayoutParams(dp(46), dp(46)))
+        tile.addView(icon, LinearLayout.LayoutParams(dp(48), dp(48)))
 
-        val words = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(7), 0, 0, 0)
-        }
-        val title = text(game.title, 18f, 0xFF4B2C18.toInt(), true, Gravity.START or Gravity.CENTER_VERTICAL).apply {
+        // v0.6.1：主畫面遊戲卡不放獨立喇叭。
+        // 整張卡片就是操作區：點下去先朗讀遊戲名稱，再進入遊戲。
+        val title = text(
+            game.title,
+            18f,
+            0xFF4B2C18.toInt(),
+            true,
+            Gravity.START or Gravity.CENTER_VERTICAL
+        ).apply {
             maxLines = 1
-            TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(this, 13, 18, 1, TypedValue.COMPLEX_UNIT_SP)
+            TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
+                this, 14, 19, 1, TypedValue.COMPLEX_UNIT_SP
+            )
+            isClickable = false
+            isFocusable = false
         }
-        val sub = text(game.subtitle, 12f, gameSubtitleColor(game), false, Gravity.START or Gravity.CENTER_VERTICAL).apply {
-            maxLines = 1
-            TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(this, 10, 13, 1, TypedValue.COMPLEX_UNIT_SP)
-        }
-        words.addView(title, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        ))
-        words.addView(sub, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        ))
-        tile.addView(words, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        tile.addView(
+            title,
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f).apply {
+                marginStart = dp(8)
+            }
+        )
 
-        tile.setOnClickListener {
-            FeedbackTap.haptic(tile)
+        val openGame: (View) -> Unit = { tappedView ->
+            FeedbackTap.haptic(tappedView)
+            speakChinese(game.title)
             navigateTo(Screen.Game(game))
         }
+
+        tile.setOnClickListener { openGame(tile) }
+        icon.setOnClickListener { openGame(icon) }
+        title.setOnClickListener { openGame(title) }
+
         return tile
     }
-
-    private object FeedbackTap {
-        fun haptic(view: View) {
-            view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-        }
-    }
-
-    // ------------------------- GAME SHELL -------------------------
 
     private fun showGame(game: GameType) {
         handler.removeCallbacksAndMessages(null)
@@ -657,7 +659,8 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
             ViewGroup.LayoutParams.MATCH_PARENT, dp(68)
         ))
 
-        val replay = text("🔊 朗讀題目・重播", 16f, Color.WHITE, true).apply {
+        // 只有「重播題目」保留喇叭按鈕。
+        val replay = text("🔊 重播題目", 16f, Color.WHITE, true).apply {
             background = rounded(0xFF3978CF.toInt(), 16)
             setOnClickListener {
                 speakQuestion()
@@ -699,15 +702,28 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
     private fun setQuestion(q: TextView, question: String, delay: Long = 500L) {
         currentQuestion = question
         q.text = question
-        handler.postDelayed({ speakQuestion() }, delay)
+
+        // 進入遊戲後仍維持約 0.5 秒自動朗讀題目。
+        // 若主畫面的遊戲名稱還在唸，題目排在後面，避免把遊戲名稱切掉。
+        handler.postDelayed({ speakQuestion(autoRead = true) }, delay)
     }
 
-    private fun speakQuestion() {
+    private fun speakQuestion(autoRead: Boolean = false) {
         if (!ttsReady || currentQuestion.isBlank()) return
-        tts.stop()
         tts.language = Locale.TAIWAN
         tts.setSpeechRate(0.86f)
-        tts.speak(currentQuestion, TextToSpeech.QUEUE_FLUSH, null, "question")
+
+        if (!autoRead) {
+            // 使用者按「重播題目」時要立即重播。
+            tts.stop()
+        }
+
+        tts.speak(
+            currentQuestion,
+            if (autoRead) TextToSpeech.QUEUE_ADD else TextToSpeech.QUEUE_FLUSH,
+            null,
+            if (autoRead) "question_auto" else "question_replay"
+        )
     }
 
     private fun toastFeedback(message: String) {
