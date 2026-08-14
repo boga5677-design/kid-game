@@ -35,3 +35,14 @@ Artifact：`kid-game-v0.5-preview-fixed-debug-apk`
 APK：`app/build/outputs/apk/debug/app-debug.apk`
 
 Java / Kotlin JVM target：17。
+
+
+## v0.5.2 藏寶圖更新
+
+- 首頁「每日任務」現在可點擊，進入冒險藏寶圖。
+- 每日任務以 5 個島嶼檢查點呈現，日期變更後會自動重置為 0/5。
+- 每完成一個遊戲／英文測驗／聽力挑戰，地圖前進一格。
+- 首頁「星星寶箱」現在可點擊進入藏寶圖。
+- 每累積 30 顆星可打開一次寶箱並取得徽章。
+- 寶箱徽章會同步出現在「成就徽章」頁。
+- Android 實體返回鍵／返回手勢會返回上一頁。

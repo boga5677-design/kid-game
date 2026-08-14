@@ -28,6 +28,8 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.widget.TextViewCompat
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 import kotlin.math.*
 import kotlin.random.Random
@@ -45,10 +47,13 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         MEMORY("記憶挑戰", "🧠", "短期記憶")
     }
 
+    private enum class MapFocus { DAILY, CHEST }
+
     private sealed class Screen {
         object Home : Screen()
         data class Game(val game: GameType) : Screen()
         object Achievements : Screen()
+        data class TreasureMap(val focus: MapFocus) : Screen()
         object EnglishHome : Screen()
         data class EnglishWords(val category: String? = null) : Screen()
         object EnglishQuiz : Screen()
@@ -66,6 +71,9 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private var stars = 0
     private var gamesPlayed = 0
     private var difficulty = 1
+    private var dailyProgress = 0
+    private var dailyDateKey = ""
+    private var chestClaims = 0
     private var currentQuestion = ""
     private val screenStack = mutableListOf<Screen>()
     private var englishAccent = Locale.US
@@ -84,6 +92,8 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         stars = prefs.getInt("stars", 0)
         gamesPlayed = prefs.getInt("games", 0)
         difficulty = prefs.getInt("difficulty", 1).coerceIn(1, 3)
+        chestClaims = prefs.getInt("chest_claims", 0)
+        syncDailyMission()
         tts = TextToSpeech(this, this)
 
         root = FrameLayout(this).apply {
@@ -164,11 +174,58 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         addView(Space(this@MainActivity), LinearLayout.LayoutParams(1, dp(height)))
     }
 
+    private fun todayKey(): String =
+        SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+
+    private fun syncDailyMission() {
+        val today = todayKey()
+        val savedDate = prefs.getString("daily_date", "").orEmpty()
+        if (savedDate != today) {
+            dailyDateKey = today
+            dailyProgress = 0
+            prefs.edit()
+                .putString("daily_date", today)
+                .putInt("daily_progress", 0)
+                .apply()
+        } else {
+            dailyDateKey = today
+            dailyProgress = prefs.getInt("daily_progress", 0).coerceIn(0, 5)
+        }
+    }
+
+    private fun recordCompletedChallenge() {
+        syncDailyMission()
+        gamesPlayed++
+        if (dailyProgress < 5) dailyProgress++
+    }
+
+    private fun canOpenStarChest(): Boolean = stars / 30 > chestClaims
+
+    private fun starChestProgress(): Int =
+        if (canOpenStarChest()) 30 else stars % 30
+
+    private fun chestBadgeTitle(claimNumber: Int): String = when ((claimNumber - 1) % 4) {
+        0 -> "小小探險家"
+        1 -> "毛孩尋寶王"
+        2 -> "星光勇者"
+        else -> "寶藏大師"
+    }
+
+    private fun chestBadgeIcon(claimNumber: Int): String = when ((claimNumber - 1) % 4) {
+        0 -> "🗺️"
+        1 -> "🐾"
+        2 -> "🌟"
+        else -> "👑"
+    }
+
     private fun saveProgress() {
         prefs.edit()
             .putInt("stars", stars)
             .putInt("games", gamesPlayed)
             .putInt("difficulty", difficulty)
+            .putString("daily_date", dailyDateKey.ifBlank { todayKey() })
+            .putInt("daily_progress", dailyProgress)
+            .putInt("chest_claims", chestClaims)
             .apply()
     }
 
@@ -184,6 +241,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             Screen.Home -> showHome()
             is Screen.Game -> showGame(screen.game)
             Screen.Achievements -> showAchievements()
+            is Screen.TreasureMap -> showTreasureMap(screen.focus)
             Screen.EnglishHome -> showEnglishHome()
             is Screen.EnglishWords -> showEnglishWords(screen.category)
             Screen.EnglishQuiz -> showEnglishQuiz()
@@ -209,6 +267,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     // ------------------------- HOME -------------------------
 
     private fun showHome() {
+        syncDailyMission()
         root.removeAllViews()
         root.setBackgroundColor(0xFFFFF8E9.toInt())
 
@@ -239,11 +298,23 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             gravity = Gravity.CENTER
         }
         missionRow.addView(
-            makeMissionCard(R.drawable.mission_calendar, "每日任務", "${min(gamesPlayed, 5)}/5", 0xFFF0F8D9.toInt(), 0xFF58A815.toInt()),
+            makeMissionCard(
+                R.drawable.mission_calendar,
+                "每日任務",
+                "$dailyProgress/5",
+                0xFFF0F8D9.toInt(),
+                0xFF58A815.toInt()
+            ) { navigateTo(Screen.TreasureMap(MapFocus.DAILY)) },
             LinearLayout.LayoutParams(0, dp(88), 1f).apply { marginEnd = dp(5) }
         )
         missionRow.addView(
-            makeMissionCard(R.drawable.mission_treasure, "星星寶箱", "${stars % 30}/30", 0xFFFFF1D4.toInt(), 0xFFE37500.toInt()),
+            makeMissionCard(
+                R.drawable.mission_treasure,
+                "星星寶箱",
+                if (canOpenStarChest()) "可開啟!" else "${starChestProgress()}/30",
+                0xFFFFF1D4.toInt(),
+                0xFFE37500.toInt()
+            ) { navigateTo(Screen.TreasureMap(MapFocus.CHEST)) },
             LinearLayout.LayoutParams(0, dp(88), 1f).apply { marginStart = dp(5) }
         )
         content.addView(missionRow)
@@ -362,12 +433,26 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         }
     }
 
-    private fun makeMissionCard(iconRes: Int, title: String, value: String, color: Int, valueColor: Int): View {
+    private fun makeMissionCard(
+        iconRes: Int,
+        title: String,
+        value: String,
+        color: Int,
+        valueColor: Int,
+        onClick: () -> Unit
+    ): View {
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             background = rounded(color, 23)
+            elevation = dp(2).toFloat()
+            isClickable = true
+            isFocusable = true
             setPadding(dp(9), dp(7), dp(9), dp(7))
+            setOnClickListener {
+                performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                onClick()
+            }
             val iv = ImageView(this@MainActivity).apply {
                 setImageResource(iconRes)
                 scaleType = ImageView.ScaleType.FIT_CENTER
@@ -589,7 +674,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
     private fun success(feedbackView: TextView, message: String = "答對了！ ⭐ +1") {
         stars++
-        gamesPlayed++
+        recordCompletedChallenge()
         saveProgress()
         tone.startTone(ToneGenerator.TONE_PROP_ACK, 120)
         feedbackView.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
@@ -1230,7 +1315,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                     setOnClickListener {
                         if (opt == target) {
                             stars++
-                            gamesPlayed++
+                            recordCompletedChallenge()
                             saveProgress()
                             feedback(fb, "答對了！ ⭐ +1", true)
                             speakEnglish(target.english, englishAccent)
@@ -1281,7 +1366,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                     setOnClickListener {
                         if (opt == target) {
                             stars++
-                            gamesPlayed++
+                            recordCompletedChallenge()
                             saveProgress()
                             feedback(fb, "聽對了！ ${target.english} ⭐ +1", true)
                             handler.postDelayed({ nextRound() }, 900L)
@@ -1490,6 +1575,166 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         return prev[b.length]
     }
 
+    // ------------------------- TREASURE MAP -------------------------
+
+    private fun showTreasureMap(focus: MapFocus) {
+        syncDailyMission()
+        root.removeAllViews()
+        root.setBackgroundColor(0xFFFFF5D8.toInt())
+
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+            isVerticalScrollBarEnabled = false
+        }
+        val page = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(10), dp(12), dp(24))
+        }
+        scroll.addView(page, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+        root.addView(scroll)
+
+        page.addView(makePageHeader("冒險藏寶圖"))
+        page.addSpace(8)
+
+        val intro = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            background = rounded(Color.WHITE, 22)
+            elevation = dp(2).toFloat()
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            addView(text(
+                if (focus == MapFocus.DAILY) "🗺️ 今天的冒險路線" else "🎁 星星寶箱探險",
+                22f, brown, true
+            ))
+            addView(text(
+                if (focus == MapFocus.DAILY)
+                    "完成遊戲就會往前走，今天已走到 $dailyProgress / 5"
+                else if (canOpenStarChest())
+                    "寶箱已經發光了！打開就能得到新徽章"
+                else
+                    "再收集 ${30 - starChestProgress()} 顆星，就能打開下一個寶箱",
+                15f, 0xFF765D49.toInt(), false
+            ).apply {
+                maxLines = 2
+                TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
+                    this, 13, 16, 1, TypedValue.COMPLEX_UNIT_SP
+                )
+            })
+        }
+        page.addView(intro, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(92)
+        ))
+        page.addSpace(8)
+
+        val map = TreasureMapView(
+            this,
+            dailyProgress = dailyProgress,
+            chestReady = canOpenStarChest()
+        )
+        page.addView(map, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(430)
+        ))
+
+        page.addSpace(10)
+
+        val missionCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = rounded(0xFFFFFDF4.toInt(), 22, 0x22A97932, 1)
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            addView(text("🐾 每日任務路線", 20f, brown, true, Gravity.START))
+        }
+        val missionNames = listOf("勇敢出發", "動動腦", "再挑戰一次", "快到終點了", "完成今日冒險")
+        missionNames.forEachIndexed { index, title ->
+            val done = dailyProgress > index
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                val badge = text(if (done) "✓" else "${index + 1}", 18f, Color.WHITE, true).apply {
+                    background = rounded(if (done) 0xFF69B94A.toInt() else 0xFFD5A95A.toInt(), 18)
+                }
+                addView(badge, LinearLayout.LayoutParams(dp(38), dp(38)))
+                addView(text(title, 16f, brown, true, Gravity.START or Gravity.CENTER_VERTICAL),
+                    LinearLayout.LayoutParams(0, dp(42), 1f).apply { marginStart = dp(8) })
+                addView(text(if (done) "完成" else "去挑戰", 14f,
+                    if (done) 0xFF4C9A38.toInt() else 0xFF2F78C4.toInt(), true),
+                    LinearLayout.LayoutParams(dp(70), dp(42)))
+                isClickable = true
+                isFocusable = true
+                setOnClickListener {
+                    performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                    navigateTo(Screen.Game(GameType.values()[index]))
+                }
+            }
+            missionCard.addView(row, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(44)
+            ))
+        }
+        page.addView(missionCard)
+
+        page.addSpace(10)
+
+        val chestCard = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            background = rounded(
+                if (canOpenStarChest()) 0xFFFFE49A.toInt() else 0xFFFFF2D8.toInt(),
+                24,
+                if (canOpenStarChest()) 0xFFFFB300.toInt() else 0x33A97932,
+                2
+            )
+            elevation = dp(3).toFloat()
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+
+            addView(text(if (canOpenStarChest()) "✨ 🎁 ✨" else "🎁", 38f))
+            addView(text(
+                if (canOpenStarChest()) "星星寶箱可以打開了！" else "星星寶箱 ${starChestProgress()}/30",
+                20f, brown, true
+            ))
+            addView(text(
+                if (canOpenStarChest()) "點一下開箱，獲得一枚新的冒險徽章" else "每累積 30 顆星，就能開一次寶箱",
+                14f, 0xFF7B624A.toInt(), false
+            ))
+
+            isClickable = true
+            isFocusable = true
+            setOnClickListener {
+                if (canOpenStarChest()) {
+                    openStarChest()
+                } else {
+                    performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                    toastFeedback("還差 ${30 - starChestProgress()} 顆星就能開箱！")
+                }
+            }
+        }
+        page.addView(chestCard, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(156)
+        ))
+    }
+
+    private fun openStarChest() {
+        if (!canOpenStarChest()) return
+        chestClaims++
+        saveProgress()
+        tone.startTone(ToneGenerator.TONE_PROP_ACK, 180)
+        root.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+
+        val badgeTitle = chestBadgeTitle(chestClaims)
+        val badgeIcon = chestBadgeIcon(chestClaims)
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("$badgeIcon 獲得新徽章！")
+            .setMessage("你打開了星星寶箱，得到「$badgeTitle」徽章！\n\n繼續玩遊戲、收集星星，還能找到更多寶藏。")
+            .setPositiveButton("收下徽章") { _, _ ->
+                renderScreen(Screen.TreasureMap(MapFocus.CHEST))
+            }
+            .setNeutralButton("看成就") { _, _ ->
+                navigateTo(Screen.Achievements)
+            }
+            .show()
+    }
+
     // ------------------------- ACHIEVEMENTS -------------------------
 
     private fun showAchievements() {
@@ -1533,7 +1778,11 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             Triple("🔥", "連勝新秀", stars >= 10),
             Triple("🧠", "記憶小高手", stars >= 20),
             Triple("🔢", "數學達人", stars >= 30),
-            Triple("🏆", "毛孩學霸", stars >= 50)
+            Triple("🏆", "毛孩學霸", stars >= 50),
+            Triple("🗺️", "小小探險家", chestClaims >= 1),
+            Triple("🐾", "毛孩尋寶王", chestClaims >= 2),
+            Triple("🌟", "星光勇者", chestClaims >= 3),
+            Triple("👑", "寶藏大師", chestClaims >= 4)
         )
         badges.forEach { (icon, title, unlocked) ->
             val card = LinearLayout(this).apply {
@@ -1554,6 +1803,149 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                 columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
                 setMargins(dp(6), dp(6), dp(6), dp(6))
             })
+        }
+    }
+
+    // ------------------------- CUSTOM TREASURE MAP VIEW -------------------------
+
+    private class TreasureMapView(
+        context: Context,
+        private val dailyProgress: Int,
+        private val chestReady: Boolean
+    ) : View(context) {
+        private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val density = resources.displayMetrics.density
+        private fun dp(v: Float) = v * density
+
+        private val points = arrayOf(
+            PointF(0.18f, 0.17f),
+            PointF(0.72f, 0.29f),
+            PointF(0.28f, 0.45f),
+            PointF(0.75f, 0.61f),
+            PointF(0.28f, 0.77f),
+            PointF(0.73f, 0.85f)
+        )
+
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            val w = width.toFloat()
+            val h = height.toFloat()
+
+            paint.style = Paint.Style.FILL
+            paint.color = 0xFFFFE8AD.toInt()
+            canvas.drawRoundRect(0f, 0f, w, h, dp(24f), dp(24f), paint)
+
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = dp(3f)
+            paint.color = 0xFFCF9C55.toInt()
+            canvas.drawRoundRect(dp(2f), dp(2f), w - dp(2f), h - dp(2f), dp(24f), dp(24f), paint)
+
+            // river and little sea waves
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = dp(12f)
+            paint.color = 0xFF91D9E8.toInt()
+            paint.strokeCap = Paint.Cap.ROUND
+            val river = Path().apply {
+                moveTo(w * 0.02f, h * 0.55f)
+                cubicTo(w * 0.22f, h * 0.48f, w * 0.45f, h * 0.63f, w * 0.63f, h * 0.54f)
+                cubicTo(w * 0.78f, h * 0.47f, w * 0.90f, h * 0.52f, w * 1.02f, h * 0.45f)
+            }
+            canvas.drawPath(river, paint)
+
+            // dotted adventure route
+            val route = Path()
+            val screenPoints = points.map { PointF(it.x * w, it.y * h) }
+            route.moveTo(screenPoints[0].x, screenPoints[0].y)
+            for (i in 1 until screenPoints.size) {
+                val a = screenPoints[i - 1]
+                val b = screenPoints[i]
+                val midX = (a.x + b.x) / 2f
+                route.cubicTo(midX, a.y, midX, b.y, b.x, b.y)
+            }
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = dp(5f)
+            paint.color = 0xFF7A5B3C.toInt()
+            paint.pathEffect = DashPathEffect(floatArrayOf(dp(8f), dp(8f)), 0f)
+            canvas.drawPath(route, paint)
+            paint.pathEffect = null
+
+            // five islands / checkpoints
+            for (i in 0 until 5) {
+                val p = screenPoints[i]
+                val done = dailyProgress > i
+
+                paint.style = Paint.Style.FILL
+                paint.color = if (done) 0xFFA9D96B.toInt() else 0xFFC9E592.toInt()
+                canvas.drawOval(
+                    p.x - dp(46f), p.y - dp(28f),
+                    p.x + dp(46f), p.y + dp(28f), paint
+                )
+
+                paint.color = if (done) 0xFF5DA63D.toInt() else 0xFFF8F1D8.toInt()
+                canvas.drawCircle(p.x, p.y, dp(20f), paint)
+
+                textPaint.textAlign = Paint.Align.CENTER
+                textPaint.typeface = Typeface.DEFAULT_BOLD
+                textPaint.textSize = dp(18f)
+                textPaint.color = if (done) Color.WHITE else 0xFF7A5B3C.toInt()
+                canvas.drawText(if (done) "✓" else "${i + 1}", p.x, p.y + dp(6f), textPaint)
+            }
+
+            // chest at the end of the map
+            val c = screenPoints[5]
+            drawChest(canvas, c.x, c.y, chestReady)
+
+            // decorative compass
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = dp(2f)
+            paint.color = 0x997A5B3C.toInt()
+            canvas.drawCircle(w * 0.86f, h * 0.14f, dp(25f), paint)
+            canvas.drawLine(w * 0.86f, h * 0.10f, w * 0.86f, h * 0.18f, paint)
+            canvas.drawLine(w * 0.82f, h * 0.14f, w * 0.90f, h * 0.14f, paint)
+            textPaint.textSize = dp(11f)
+            textPaint.color = 0xFF7A5B3C.toInt()
+            canvas.drawText("N", w * 0.86f, h * 0.085f, textPaint)
+        }
+
+        private fun drawChest(canvas: Canvas, cx: Float, cy: Float, open: Boolean) {
+            paint.style = Paint.Style.FILL
+            paint.color = 0xFF8A4A20.toInt()
+            canvas.drawRoundRect(
+                cx - dp(42f), cy - dp(18f),
+                cx + dp(42f), cy + dp(28f),
+                dp(8f), dp(8f), paint
+            )
+
+            paint.color = 0xFFFFB423.toInt()
+            canvas.drawRect(cx - dp(7f), cy - dp(18f), cx + dp(7f), cy + dp(28f), paint)
+            canvas.drawRect(cx - dp(42f), cy + dp(4f), cx + dp(42f), cy + dp(12f), paint)
+
+            paint.color = 0xFFB5642D.toInt()
+            if (open) {
+                val lid = Path().apply {
+                    moveTo(cx - dp(40f), cy - dp(22f))
+                    lineTo(cx - dp(28f), cy - dp(48f))
+                    lineTo(cx + dp(34f), cy - dp(48f))
+                    lineTo(cx + dp(42f), cy - dp(22f))
+                    close()
+                }
+                canvas.drawPath(lid, paint)
+                textPaint.textAlign = Paint.Align.CENTER
+                textPaint.typeface = Typeface.DEFAULT_BOLD
+                textPaint.textSize = dp(27f)
+                textPaint.color = 0xFFFFC400.toInt()
+                canvas.drawText("★", cx, cy - dp(55f), textPaint)
+            } else {
+                canvas.drawRoundRect(
+                    cx - dp(42f), cy - dp(37f),
+                    cx + dp(42f), cy - dp(12f),
+                    dp(12f), dp(12f), paint
+                )
+            }
+
+            paint.color = 0xFFFFD45A.toInt()
+            canvas.drawCircle(cx, cy + dp(5f), dp(7f), paint)
         }
     }
 
