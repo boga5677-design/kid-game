@@ -575,16 +575,32 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
             contentDescription = game.title
         }
 
+        val iconBubble = FrameLayout(this).apply {
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(0xFFF9FAFC.toInt())
+            }
+            elevation = dp(1).toFloat()
+            isClickable = false
+            isFocusable = false
+        }
+
         val icon = ImageView(this).apply {
             setImageResource(gameIconRes(game))
-            scaleType = ImageView.ScaleType.CENTER_CROP
-            clipToOutline = true
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            adjustViewBounds = true
             contentDescription = game.title
             // 子元件不攔截點擊，整張卡片都是同一個點擊區。
             isClickable = false
             isFocusable = false
+            setPadding(dp(6), dp(6), dp(6), dp(6))
         }
-        tile.addView(icon, LinearLayout.LayoutParams(dp(48), dp(48)))
+        iconBubble.addView(icon, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            Gravity.CENTER
+        ))
+        tile.addView(iconBubble, LinearLayout.LayoutParams(dp(48), dp(48)))
 
         val title = text(
             game.title,
