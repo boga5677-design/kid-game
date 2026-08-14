@@ -141,6 +141,28 @@ object EnglishWordBank {
         "動作" to "🏃", "身體部位" to "👀", "顏色" to "🌈", "形狀" to "🔷", "數字" to "🔢"
     )
 
+
+    val categoryDescriptions: Map<String, String> = linkedMapOf(
+        "生活用品" to "家裡與幼兒園每天會看到",
+        "交通工具" to "汽車、公車、捷運與飛機",
+        "動物" to "常見寵物與動物園動物",
+        "植物" to "樹、花、葉子與小草",
+        "食物" to "三餐與孩子常吃的食物",
+        "水果" to "生活中常見的水果",
+        "蔬菜" to "餐桌上的常見蔬菜",
+        "運動" to "球類、游泳與戶外活動",
+        "動作" to "走、跑、跳、吃與睡",
+        "身體部位" to "眼睛、耳朵、手與腳",
+        "形狀" to "圓形、三角形、正方形與星形",
+        "數字" to "從 0 學到 100",
+        "顏色" to "生活中常見的顏色"
+    )
+
+    fun wordsIn(category: String): List<EnglishWord> = all.filter { it.category == category }
+
+    fun categoryDescription(category: String): String =
+        categoryDescriptions[category] ?: "一起學習生活中常見的英文"
+
     fun levelWords(level: Int): List<EnglishWord> {
         if (all.isEmpty()) return emptyList()
         val start = ((level.coerceAtLeast(1) - 1) * 5) % all.size

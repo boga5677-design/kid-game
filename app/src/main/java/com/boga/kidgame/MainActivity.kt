@@ -1281,65 +1281,156 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
     }
 
     private fun showEnglishWords(category: String?) {
-        root.removeAllViews()
-        root.setBackgroundColor(0xFFF7FBFF.toInt())
+        if (category == null) {
+            showEnglishCategoryList()
+            return
+        }
+        showEnglishWordDeck(category)
+    }
 
-        var selectedCategory = category
-        var pool = if (selectedCategory == null) EnglishWordBank.all else EnglishWordBank.all.filter { it.category == selectedCategory }
-        if (pool.isEmpty()) pool = EnglishWordBank.all
+    /**
+     * 單字學習首頁：依照使用者提供的參考截圖，以大卡片分門別類。
+     */
+    private fun showEnglishCategoryList() {
+        root.removeAllViews()
+        root.setBackgroundColor(0xFFFFFAF0.toInt())
+
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+            isVerticalScrollBarEnabled = false
+        }
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(9), dp(12), dp(28))
+        }
+        scroll.addView(content)
+        root.addView(scroll)
+
+        content.addView(makePageHeader("單字學習"))
+        content.addSpace(8)
+
+        val intro = text("選一個主題開始學習", 18f, brown, true, Gravity.START or Gravity.CENTER_VERTICAL).apply {
+            background = rounded(0xFFFFF1C9.toInt(), 19)
+        }
+        content.addView(intro, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)))
+        content.addSpace(10)
+
+        EnglishWordBank.categories.forEach { (categoryName, fallbackIcon) ->
+            val categoryWords = EnglishWordBank.wordsIn(categoryName)
+            val heroEmoji = categoryWords.firstOrNull()?.emoji ?: fallbackIcon
+            val sampleEmoji = categoryWords.take(4).joinToString("   ") { it.emoji }
+            val description = EnglishWordBank.categoryDescription(categoryName)
+
+            val card = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(12), dp(12), dp(12), dp(12))
+                background = rounded(Color.WHITE, 26)
+                elevation = dp(2).toFloat()
+                isClickable = true
+                isFocusable = true
+            }
+
+            val iconBox = text(heroEmoji, 52f, Color.BLACK, false).apply {
+                background = rounded(0xFFFFE3EC.toInt(), 23)
+            }
+            card.addView(iconBox, LinearLayout.LayoutParams(dp(104), dp(104)).apply {
+                marginEnd = dp(14)
+            })
+
+            val words = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            val title = text(categoryName, 25f, 0xFF19191F.toInt(), true, Gravity.START or Gravity.CENTER_VERTICAL).apply {
+                maxLines = 1
+                TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
+                    this, 20, 27, 1, TypedValue.COMPLEX_UNIT_SP
+                )
+            }
+            val desc = text(description, 16f, 0xFF303038.toInt(), false, Gravity.START or Gravity.CENTER_VERTICAL).apply {
+                maxLines = 2
+                TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
+                    this, 14, 17, 1, TypedValue.COMPLEX_UNIT_SP
+                )
+            }
+            val samples = text(sampleEmoji, 25f, 0xFF19191F.toInt(), false, Gravity.START or Gravity.CENTER_VERTICAL).apply {
+                maxLines = 1
+            }
+            words.addView(title, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(38)))
+            words.addView(desc, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)))
+            words.addView(samples, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(40)))
+            card.addView(words, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+
+            val arrow = text("›", 42f, 0xFF17171B.toInt(), true)
+            card.addView(arrow, LinearLayout.LayoutParams(dp(40), dp(70)))
+
+            card.setOnClickListener {
+                // 分類卡只負責進入分類；進入後 0.5 秒自動朗讀第一個英文單字。
+                navigateTo(Screen.EnglishWords(categoryName))
+            }
+
+            content.addView(card, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(148)))
+            content.addSpace(10)
+        }
+    }
+
+    /**
+     * 單字卡：只保留美式發音。進頁 0.5 秒自動朗讀；喇叭與換字按鈕則立即朗讀。
+     */
+    private fun showEnglishWordDeck(category: String) {
+        root.removeAllViews()
+        root.setBackgroundColor(0xFFFFFAF0.toInt())
+
+        val pool = EnglishWordBank.wordsIn(category).ifEmpty { EnglishWordBank.all }
         var index = 0
 
         val page = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(12), dp(9), dp(12), dp(12))
+            setPadding(dp(12), dp(9), dp(12), dp(18))
         }
         root.addView(page)
-        page.addView(makePageHeader("單字學習"))
+        page.addView(makePageHeader(category))
         page.addSpace(8)
 
-        val spinner = Spinner(this)
-        val categories = listOf("全部分類") + EnglishWordBank.categories.map { "${it.second} ${it.first}" }
-        spinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, categories)
-        if (selectedCategory != null) {
-            val pos = EnglishWordBank.categories.indexOfFirst { it.first == selectedCategory }
-            if (pos >= 0) spinner.setSelection(pos + 1)
+        val categoryInfo = text(EnglishWordBank.categoryDescription(category), 16f, brown, false, Gravity.START or Gravity.CENTER_VERTICAL).apply {
+            background = rounded(0xFFFFF1C9.toInt(), 18)
         }
-        page.addView(spinner, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(50)))
+        page.addView(categoryInfo, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)))
+        page.addSpace(8)
 
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setPadding(dp(14), dp(10), dp(14), dp(10))
+            setPadding(dp(14), dp(12), dp(14), dp(12))
             background = rounded(Color.WHITE, 26)
             elevation = dp(3).toFloat()
         }
-        val emoji = text("", 82f)
-        val english = text("", 31f, 0xFF2A67A5.toInt(), true).apply {
+        val emoji = text("", 88f)
+        val english = text("", 33f, 0xFF2A67A5.toInt(), true).apply {
             maxLines = 1
-            TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(this, 22, 34, 1, TypedValue.COMPLEX_UNIT_SP)
+            TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(this, 23, 35, 1, TypedValue.COMPLEX_UNIT_SP)
+            isClickable = true
+            isFocusable = true
         }
         val chinese = text("", 22f, brown, true)
-        val cat = text("", 14f, 0xFF7A6C62.toInt(), false)
-        card.addView(emoji, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.8f))
-        card.addView(english, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 0.8f))
-        card.addView(chinese, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 0.65f))
-        card.addView(cat, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 0.45f))
+        val position = text("", 14f, 0xFF7A6C62.toInt(), false)
+        card.addView(emoji, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.75f))
+        card.addView(english, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 0.72f))
+        card.addView(chinese, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 0.56f))
+        card.addView(position, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 0.40f))
         page.addView(card, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         page.addSpace(8)
 
-        val accentRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val us = text("🇺🇸 美式發音", 17f, Color.WHITE, true).apply {
-            background = rounded(0xFF3978CF.toInt(), 17)
+        // 使用者指定：發音控制只需要一個喇叭圖示，不顯示美式／英式切換。
+        val speaker = text("🔊", 30f, Color.WHITE, true).apply {
+            background = rounded(0xFF3978CF.toInt(), 18)
+            contentDescription = "朗讀英文單字"
         }
-        val uk = text("🇬🇧 英式發音", 17f, Color.WHITE, true).apply {
-            background = rounded(0xFF6C58C5.toInt(), 17)
-        }
-        accentRow.addView(us, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginEnd = dp(5) })
-        accentRow.addView(uk, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginStart = dp(5) })
-        page.addView(accentRow)
+        page.addView(speaker, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(54)))
         page.addSpace(7)
 
-        val knownButton = text("🔔 會了", 18f, brown, true).apply {
+        val knownButton = text("✅ 會了", 18f, brown, true).apply {
             background = rounded(0xFFFFE9A9.toInt(), 18)
         }
         page.addView(knownButton, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(50)))
@@ -1352,42 +1443,34 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
         nav.addView(next, LinearLayout.LayoutParams(0, dp(50), 1f).apply { marginStart = dp(5) })
         page.addView(nav)
 
-        fun renderWord(autoSpeak: Boolean = false) {
-            if (pool.isEmpty()) return
+        fun currentWord(): EnglishWord = pool[((index % pool.size) + pool.size) % pool.size]
+
+        fun renderWord(speakNow: Boolean) {
             index = ((index % pool.size) + pool.size) % pool.size
-            val w = pool[index]
+            val w = currentWord()
             emoji.text = w.emoji
             english.text = w.english
             chinese.text = w.chinese
-            cat.text = "${w.category}　${index + 1} / ${pool.size}"
-            val known = englishKnown().contains(w.english.lowercase())
-            knownButton.text = if (known) "✅ 已會了" else "🔔 會了"
-            if (autoSpeak) speakEnglish(w.english, englishAccent)
+            position.text = "$category　${index + 1} / ${pool.size}"
+            val known = englishKnown().contains(w.english.lowercase(Locale.US))
+            knownButton.text = if (known) "✅ 已會了" else "✅ 會了"
+            if (speakNow) speakEnglishUS(w.english)
         }
 
-        spinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
-            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                selectedCategory = if (position == 0) null else EnglishWordBank.categories[position - 1].first
-                pool = if (selectedCategory == null) EnglishWordBank.all else EnglishWordBank.all.filter { it.category == selectedCategory }
-                index = 0
-                renderWord(false)
-            }
+        speaker.setOnClickListener { speakEnglishUS(currentWord().english) }
+        english.setOnClickListener { speakEnglishUS(currentWord().english) }
+        prev.setOnClickListener {
+            index--
+            renderWord(true)
         }
-        us.setOnClickListener {
-            englishAccent = Locale.US
-            speakEnglish(pool[index].english, Locale.US)
+        next.setOnClickListener {
+            index++
+            renderWord(true)
         }
-        uk.setOnClickListener {
-            englishAccent = Locale.UK
-            speakEnglish(pool[index].english, Locale.UK)
-        }
-        prev.setOnClickListener { index--; renderWord(true) }
-        next.setOnClickListener { index++; renderWord(true) }
         knownButton.setOnClickListener {
-            val w = pool[index]
+            val w = currentWord()
             val set = englishKnown()
-            if (set.add(w.english.lowercase())) {
+            if (set.add(w.english.lowercase(Locale.US))) {
                 saveEnglishKnown(set)
                 stars++
                 saveProgress()
@@ -1397,7 +1480,10 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
                 tone.startTone(ToneGenerator.TONE_PROP_BEEP, 70)
             }
         }
+
         renderWord(false)
+        // 使用者指定：點進分類後停頓 0.5 秒，自動朗讀目前英文單字。
+        handler.postDelayed({ speakEnglishUS(currentWord().english) }, 500L)
     }
 
     private fun showEnglishQuiz() {
@@ -1435,12 +1521,13 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
             options.shuffled().forEach { opt ->
                 val b = optionButton(opt.english, 0xFFFFFFFF.toInt()).apply {
                     setOnClickListener {
+                        // 點英文答案按鈕時，立即以美式發音讀出按鈕文字。
+                        speakEnglishUS(opt.english)
                         if (opt == target) {
                             stars++
                             recordCompletedChallenge()
                             saveProgress()
                             feedback(fb, "答對了！ ⭐ +1", true)
-                            speakEnglish(target.english, englishAccent)
                             handler.postDelayed({ nextQuestion() }, 850L)
                         } else wrong(fb, "再想想看～")
                     }
@@ -1503,9 +1590,9 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
                     setMargins(dp(6), dp(6), dp(6), dp(6))
                 })
             }
-            handler.postDelayed({ speakEnglish(target.english, englishAccent) }, 500L)
+            handler.postDelayed({ speakEnglishUS(target.english) }, 500L)
         }
-        replay.setOnClickListener { speakEnglish(target.english, englishAccent) }
+        replay.setOnClickListener { speakEnglishUS(target.english) }
         nextRound()
     }
 
@@ -1535,12 +1622,11 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
         page.addView(card, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(245)))
         page.addSpace(8)
 
-        val accent = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val us = text("🇺🇸 美式", 17f, Color.WHITE, true).apply { background = rounded(0xFF3978CF.toInt(), 16) }
-        val uk = text("🇬🇧 英式", 17f, Color.WHITE, true).apply { background = rounded(0xFF6C58C5.toInt(), 16) }
-        accent.addView(us, LinearLayout.LayoutParams(0, dp(46), 1f).apply { marginEnd = dp(5) })
-        accent.addView(uk, LinearLayout.LayoutParams(0, dp(46), 1f).apply { marginStart = dp(5) })
-        page.addView(accent)
+        val replay = text("🔊", 28f, Color.WHITE, true).apply {
+            background = rounded(0xFF3978CF.toInt(), 16)
+            contentDescription = "美式發音示範"
+        }
+        page.addView(replay, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)))
         page.addSpace(8)
 
         val start = text("🔊 示範 → 停 0.5 秒 → 🎤 跟讀", 17f, Color.WHITE, true).apply {
@@ -1562,9 +1648,9 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
         pronunciationResultView = result
         pronunciationScoreView = score
 
-        us.setOnClickListener { englishAccent = Locale.US; speakEnglish(targetWord.english, Locale.US) }
-        uk.setOnClickListener { englishAccent = Locale.UK; speakEnglish(targetWord.english, Locale.UK) }
+        replay.setOnClickListener { speakEnglishUS(targetWord.english) }
         start.setOnClickListener { requestPronunciationDemo() }
+        handler.postDelayed({ speakEnglishUS(targetWord.english) }, 500L)
     }
 
     private fun speakChinese(text: String) {
@@ -1574,11 +1660,18 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
         tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "zh_question")
     }
 
-    private fun speakEnglish(text: String, locale: Locale) {
+    private fun speakEnglishUS(text: String) {
         if (!ttsReady) return
-        tts.language = locale
+        englishAccent = Locale.US
+        tts.stop()
+        tts.language = Locale.US
         tts.setSpeechRate(0.82f)
         tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "english_word")
+    }
+
+    private fun speakEnglish(text: String, locale: Locale = Locale.US) {
+        // 保留舊呼叫介面，但英文小教室統一使用美式發音。
+        speakEnglishUS(text)
     }
 
     private fun requestPronunciationDemo() {
@@ -1596,7 +1689,8 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
         pronunciationResultView?.text = "辨識內容：—"
         pronunciationScoreView?.text = "發音分數：—"
         tts.stop()
-        tts.language = englishAccent
+        englishAccent = Locale.US
+        tts.language = Locale.US
         tts.setSpeechRate(0.78f)
         tts.speak(pronunciationTarget, TextToSpeech.QUEUE_FLUSH, null, "pronunciation_demo")
     }
@@ -1654,8 +1748,8 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
 
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, englishAccent.toLanguageTag())
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, englishAccent.toLanguageTag())
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.US.toLanguageTag())
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, Locale.US.toLanguageTag())
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
         }
