@@ -1866,6 +1866,228 @@ private fun openStarChest() {
         }
     }
 
+    // ------------------------- CUSTOM MAZE VIEW -------------------------
+
+    private class MazeView(
+        context: Context,
+        val onWin: () -> Unit
+    ) : View(context) {
+        private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+        private var player = PointF()
+        private var goal = PointF()
+        private val walls = mutableListOf<RectF>()
+        private var dragging = false
+        private var ready = false
+        private val density = resources.displayMetrics.density
+        private fun dp(v: Float) = v * density
+
+        override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+            player = PointF(dp(34f), dp(52f))
+            goal = PointF(w - dp(36f), h - dp(44f))
+            walls.clear()
+            walls += RectF(w * .18f, dp(25f), w * .25f, h * .63f)
+            walls += RectF(w * .38f, h * .33f, w * .45f, h - dp(28f))
+            walls += RectF(w * .58f, dp(25f), w * .65f, h * .63f)
+            walls += RectF(w * .78f, h * .33f, w * .85f, h - dp(28f))
+            ready = true
+        }
+
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            if (!ready) return
+            canvas.drawColor(0xFFEAF6FF.toInt())
+
+            p.color = 0xFF8B6C5E.toInt()
+            walls.forEach { canvas.drawRoundRect(it, dp(8f), dp(8f), p) }
+
+            p.color = 0xFFFFC107.toInt()
+            drawStar(canvas, player.x, player.y, dp(19f), p)
+
+            p.color = 0xFF915C2B.toInt()
+            canvas.drawRoundRect(goal.x-dp(24f), goal.y-dp(17f), goal.x+dp(24f), goal.y+dp(17f), dp(6f), dp(6f), p)
+            p.color = 0xFFFFC344.toInt()
+            canvas.drawRect(goal.x-dp(3f), goal.y-dp(17f), goal.x+dp(3f), goal.y+dp(17f), p)
+        }
+
+        override fun onTouchEvent(e: MotionEvent): Boolean {
+            when (e.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    dragging = hypot((e.x-player.x).toDouble(), (e.y-player.y).toDouble()) <= dp(48f)
+                }
+                MotionEvent.ACTION_MOVE -> if (dragging) {
+                    val x = e.x.coerceIn(dp(20f), width-dp(20f))
+                    val y = e.y.coerceIn(dp(20f), height-dp(20f))
+                    val r = RectF(x-dp(17f), y-dp(17f), x+dp(17f), y+dp(17f))
+                    if (walls.none { RectF.intersects(it, r) }) {
+                        player.x = x
+                        player.y = y
+                        invalidate()
+                        if (hypot((player.x-goal.x).toDouble(), (player.y-goal.y).toDouble()) < dp(45f)) {
+                            dragging = false
+                            onWin()
+                        }
+                    }
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> dragging = false
+            }
+            return true
+        }
+
+        private fun drawStar(c: Canvas, cx: Float, cy: Float, r: Float, paint: Paint) {
+            val path = Path()
+            for (i in 0 until 10) {
+                val a = -Math.PI/2 + i*Math.PI/5
+                val rr = if (i%2==0) r else r*.45f
+                val x = cx + cos(a).toFloat()*rr
+                val y = cy + sin(a).toFloat()*rr
+                if (i==0) path.moveTo(x,y) else path.lineTo(x,y)
+            }
+            path.close()
+            c.drawPath(path, paint)
+        }
+    }
+
+    // ------------------------- CUSTOM MATCH VIEW -------------------------
+
+    private class MatchView(
+        context: Context,
+        val onCorrect: () -> Unit,
+        val onWrong: () -> Unit,
+        val onComplete: () -> Unit
+    ) : View(context) {
+
+        data class Card(val id: Int, val side: Int, val emoji: String, var rect: RectF = RectF())
+
+        private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeCap = Paint.Cap.ROUND
+        }
+        private val density = resources.displayMetrics.density
+        private fun dp(v: Float) = v * density
+
+        private val cards = mutableListOf<Card>()
+        private val matched = mutableSetOf<Int>()
+        private var dragStart = -1
+        private var selected = -1
+        private var dragPoint = PointF()
+
+        init {
+            val icons = listOf("🍎", "🐸", "🐼", "🍌")
+            icons.forEachIndexed { i, e -> cards += Card(i, 0, e) }
+            (0..3).shuffled().forEach { i -> cards += Card(i, 1, icons[i]) }
+        }
+
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            canvas.drawColor(0xFFF7FBFF.toInt())
+
+            val top = dp(15f)
+            val gap = dp(11f)
+            val cardW = min(dp(125f), width * .34f)
+            val cardH = (height - top*2 - gap*3) / 4f
+            val leftX = dp(10f)
+            val rightX = width - dp(10f) - cardW
+
+            for (i in 0..3) {
+                val y = top + i*(cardH+gap)
+                cards[i].rect = RectF(leftX, y, leftX+cardW, y+cardH)
+                cards[4+i].rect = RectF(rightX, y, rightX+cardW, y+cardH)
+            }
+
+            linePaint.strokeWidth = dp(6f)
+            val lineColors = intArrayOf(
+                0xFFFF6B9A.toInt(), 0xFF4AA8FF.toInt(),
+                0xFFFFBE3C.toInt(), 0xFF65C96F.toInt()
+            )
+            matched.forEach { id ->
+                val a = cards.first { it.id == id && it.side == 0 }.rect
+                val b = cards.first { it.id == id && it.side == 1 }.rect
+                linePaint.color = lineColors[id]
+                canvas.drawLine(a.right, a.centerY(), b.left, b.centerY(), linePaint)
+            }
+
+            if (dragStart >= 0) {
+                val r = cards[dragStart].rect
+                linePaint.color = 0xFF7D6AEF.toInt()
+                val sx = if (cards[dragStart].side == 0) r.right else r.left
+                canvas.drawLine(sx, r.centerY(), dragPoint.x, dragPoint.y, linePaint)
+            }
+
+            cards.forEachIndexed { index, c ->
+                paint.color = when {
+                    c.id in matched -> 0xFFE7F8E4.toInt()
+                    index == selected || index == dragStart -> 0xFFFFF0B7.toInt()
+                    else -> Color.WHITE
+                }
+                canvas.drawRoundRect(c.rect, dp(18f), dp(18f), paint)
+
+                textPaint.textAlign = Paint.Align.CENTER
+                textPaint.textSize = min(dp(45f), cardH*.52f)
+                canvas.drawText(c.emoji, c.rect.centerX(), c.rect.centerY()+textPaint.textSize*.34f, textPaint)
+            }
+        }
+
+        private fun cardAt(x: Float, y: Float): Int {
+            return cards.indexOfFirst { it.id !in matched && RectF(it.rect).apply { inset(-dp(10f), -dp(10f)) }.contains(x,y) }
+        }
+
+        override fun onTouchEvent(e: MotionEvent): Boolean {
+            when (e.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    dragStart = cardAt(e.x, e.y)
+                    if (dragStart >= 0) {
+                        dragPoint.set(e.x, e.y)
+                        invalidate()
+                    }
+                }
+                MotionEvent.ACTION_MOVE -> if (dragStart >= 0) {
+                    dragPoint.set(e.x, e.y)
+                    invalidate()
+                }
+                MotionEvent.ACTION_UP -> {
+                    if (dragStart < 0) return true
+                    val start = dragStart
+                    val end = cardAt(e.x, e.y)
+                    val moved = hypot(
+                        (cards[start].rect.centerX()-e.x).toDouble(),
+                        (cards[start].rect.centerY()-e.y).toDouble()
+                    ) > dp(34f)
+
+                    if (end >= 0 && end != start && moved) {
+                        tryMatch(start, end)
+                        selected = -1
+                    } else {
+                        if (selected < 0) selected = start
+                        else if (selected == start) selected = -1
+                        else {
+                            tryMatch(selected, start)
+                            selected = -1
+                        }
+                    }
+                    dragStart = -1
+                    invalidate()
+                }
+                MotionEvent.ACTION_CANCEL -> {
+                    dragStart = -1
+                    invalidate()
+                }
+            }
+            return true
+        }
+
+        private fun tryMatch(a: Int, b: Int) {
+            val ca = cards[a]
+            val cb = cards[b]
+            if (ca.side != cb.side && ca.id == cb.id) {
+                matched += ca.id
+                onCorrect()
+                if (matched.size == 4) onComplete()
+            } else onWrong()
+        }
+    }
+
     // ------------------------- CUSTOM TREASURE MAP VIEW -------------------------
 
 
