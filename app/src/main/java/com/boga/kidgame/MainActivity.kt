@@ -27,6 +27,8 @@ import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.core.widget.TextViewCompat
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -100,6 +102,15 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             setBackgroundColor(bg)
         }
         setContentView(root)
+
+        // Android 15 / Samsung 三鍵導覽列會以 edge-to-edge 疊在 App 內容上。
+        // 只套用底部 system bar inset，保留目前上方狀態列的版面位置。
+        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
+            val navigationBar = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
+            view.setPadding(0, 0, 0, navigationBar.bottom)
+            insets
+        }
+        ViewCompat.requestApplyInsets(root)
 
         screenStack.clear()
         screenStack.add(Screen.Home)
@@ -281,7 +292,7 @@ private fun showHome() {
     }
     val content = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        setPadding(dp(10), dp(8), dp(10), dp(12))
+        setPadding(dp(10), dp(7), dp(10), dp(6))
     }
     scroll.addView(content, FrameLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT,
@@ -293,7 +304,7 @@ private fun showHome() {
     content.addView(makeTopStats(), LinearLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
     ))
-    content.addSpace(7)
+    content.addSpace(3)
 
     val missionRow = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
@@ -320,7 +331,7 @@ private fun showHome() {
         LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(5) }
     )
     content.addView(missionRow)
-    content.addSpace(6)
+    content.addSpace(3)
 
     val pets = ImageView(this).apply {
         setImageResource(R.drawable.home_pets)
@@ -331,9 +342,9 @@ private fun showHome() {
         contentDescription = "偶貴老師、黑糖老師、熊熊老師"
     }
     content.addView(pets, LinearLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT, dp(128)
+        ViewGroup.LayoutParams.MATCH_PARENT, dp(110)
     ))
-    content.addSpace(6)
+    content.addSpace(3)
 
     val gameValues = GameType.values()
     for (row in 0 until 4) {
@@ -343,42 +354,43 @@ private fun showHome() {
         repeat(2) { col ->
             val index = row * 2 + col
             val tile = makeGameTile(gameValues[index])
-            val lp = LinearLayout.LayoutParams(0, dp(80), 1f)
+            val lp = LinearLayout.LayoutParams(0, dp(70), 1f)
             if (col == 0) lp.marginEnd = dp(5) else lp.marginStart = dp(5)
             line.addView(tile, lp)
         }
         content.addView(line)
-        if (row < 3) content.addSpace(6)
+        if (row < 3) content.addSpace(3)
     }
 
-    content.addSpace(7)
+    content.addSpace(4)
 
     val english = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        setPadding(dp(14), dp(7), dp(14), dp(7))
+        minimumHeight = dp(52)
+        setPadding(dp(14), dp(5), dp(14), dp(5))
         background = rounded(0xFFDFF3FF.toInt(), 22)
         elevation = dp(2).toFloat()
         isClickable = true
         isFocusable = true
         addView(text("ABC", 21f, 0xFF2879CB.toInt(), true),
-            LinearLayout.LayoutParams(dp(58), dp(46)))
+            LinearLayout.LayoutParams(dp(58), ViewGroup.LayoutParams.WRAP_CONTENT))
         addView(text("英文小教室", 18f, brown, true,
             Gravity.START or Gravity.CENTER_VERTICAL).apply {
             maxLines = 1
             TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
                 this, 14, 19, 1, TypedValue.COMPLEX_UNIT_SP
             )
-        }, LinearLayout.LayoutParams(0, dp(46), 1f))
+        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         addView(text("›", 27f, 0xFF2879CB.toInt(), true),
-            LinearLayout.LayoutParams(dp(34), dp(46)))
+            LinearLayout.LayoutParams(dp(34), ViewGroup.LayoutParams.WRAP_CONTENT))
         setOnClickListener { navigateTo(Screen.EnglishHome) }
     }
     content.addView(english, LinearLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
     ))
 
-    content.addSpace(7)
+    content.addSpace(4)
 
     val achievements = text("🏅 我的徽章　　已累積 ⭐ $stars", 16f, brown, true, Gravity.START or Gravity.CENTER_VERTICAL).apply {
         maxLines = 1
@@ -386,12 +398,13 @@ private fun showHome() {
             this, 13, 17, 1, TypedValue.COMPLEX_UNIT_SP
         )
         background = rounded(0xFFFFE9A9.toInt(), 20)
-        minimumHeight = dp(50)
+        minimumHeight = dp(46)
         setOnClickListener { navigateTo(Screen.Achievements) }
     }
     content.addView(achievements, LinearLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
     ))
+    content.addSpace(2)
 }
 
 private fun makeTopStats(): View {
@@ -400,8 +413,8 @@ private fun makeTopStats(): View {
         gravity = Gravity.CENTER_VERTICAL
         background = rounded(Color.WHITE, 24)
         elevation = dp(3).toFloat()
-        minimumHeight = dp(66)
-        setPadding(dp(12), dp(8), dp(8), dp(8))
+        minimumHeight = dp(60)
+        setPadding(dp(12), dp(6), dp(8), dp(6))
 
         addView(text("小小腦力樂園", 20f, 0xFF4A2E1D.toInt(), true,
             Gravity.START or Gravity.CENTER_VERTICAL).apply {
@@ -453,33 +466,56 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
             gravity = Gravity.CENTER_VERTICAL
             background = rounded(color, 23)
             elevation = dp(2).toFloat()
-            minimumHeight = dp(76)
+            minimumHeight = dp(68)
             isClickable = true
             isFocusable = true
-            setPadding(dp(9), dp(8), dp(9), dp(8))
+            setPadding(dp(9), dp(6), dp(9), dp(6))
             setOnClickListener {
                 performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
                 onClick()
             }
+
             val iv = ImageView(this@MainActivity).apply {
                 setImageResource(iconRes)
                 scaleType = ImageView.ScaleType.FIT_CENTER
             }
-            addView(iv, LinearLayout.LayoutParams(dp(48), dp(48)))
+            addView(iv, LinearLayout.LayoutParams(dp(46), dp(46)))
+
             val words = LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(dp(6), 0, 0, 0)
-                addView(text(title, 16f, 0xFF4A2E1D.toInt(), true, Gravity.START or Gravity.CENTER_VERTICAL).apply {
-                    maxLines = 1
-                    TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(this, 12, 17, 1, TypedValue.COMPLEX_UNIT_SP)
-                }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
-                addView(text(value, 22f, valueColor, true, Gravity.START or Gravity.CENTER_VERTICAL).apply {
-                    maxLines = 1
-                    TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(this, 16, 22, 1, TypedValue.COMPLEX_UNIT_SP)
-                }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.25f))
+
+                addView(
+                    text(title, 15f, 0xFF4A2E1D.toInt(), true, Gravity.START or Gravity.CENTER_VERTICAL).apply {
+                        maxLines = 1
+                        TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
+                            this, 12, 16, 1, TypedValue.COMPLEX_UNIT_SP
+                        )
+                    },
+                    LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                    )
+                )
+
+                addView(
+                    text(value, 21f, valueColor, true, Gravity.START or Gravity.CENTER_VERTICAL).apply {
+                        maxLines = 1
+                        TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
+                            this, 16, 22, 1, TypedValue.COMPLEX_UNIT_SP
+                        )
+                    },
+                    LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                    )
+                )
             }
-            addView(words, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
+            addView(
+                words,
+                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            )
         }
     }
 
@@ -522,8 +558,8 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
             gravity = Gravity.CENTER_VERTICAL
             background = rounded(gameCardColor(game), 22, Color.WHITE, 2)
             elevation = dp(2).toFloat()
-            minimumHeight = dp(80)
-            setPadding(dp(8), dp(7), dp(9), dp(7))
+            minimumHeight = dp(70)
+            setPadding(dp(8), dp(5), dp(9), dp(5))
             isClickable = true
             isFocusable = true
         }
@@ -534,7 +570,7 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
             background = rounded(Color.WHITE, 50)
             clipToOutline = true
         }
-        tile.addView(icon, LinearLayout.LayoutParams(dp(50), dp(50)))
+        tile.addView(icon, LinearLayout.LayoutParams(dp(46), dp(46)))
 
         val words = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -549,9 +585,13 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
             maxLines = 1
             TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(this, 10, 13, 1, TypedValue.COMPLEX_UNIT_SP)
         }
-        words.addView(title, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.2f))
-        words.addView(sub, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 0.9f))
-        tile.addView(words, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
+        words.addView(title, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+        words.addView(sub, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+        tile.addView(words, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
 
         tile.setOnClickListener {
             FeedbackTap.haptic(tile)
