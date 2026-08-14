@@ -12,5 +12,5 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "KidsFocusMathGame"
+rootProject.name = "KidsPetLearningGame"
 include(":app")

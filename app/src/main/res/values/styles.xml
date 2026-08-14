@@ -1,8 +1,9 @@
 <resources>
-    <style name="Theme.KidsFocusMath" parent="Theme.AppCompat.Light.NoActionBar">
+    <style name="Theme.KidsPetLearning" parent="Theme.AppCompat.Light.NoActionBar">
         <item name="android:fontFamily">sans</item>
         <item name="android:windowLightStatusBar">true</item>
-        <item name="android:statusBarColor">#FFF7ED</item>
-        <item name="android:navigationBarColor">#FFF7ED</item>
+        <item name="android:statusBarColor">#FFF7E9</item>
+        <item name="android:navigationBarColor">#FFF7E9</item>
+        <item name="android:colorAccent">#FF6B7D</item>
     </style>
 </resources>

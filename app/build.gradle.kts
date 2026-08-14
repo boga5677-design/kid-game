@@ -4,15 +4,15 @@ plugins {
 }
 
 android {
-    namespace = "com.example.kidsfocusmath"
+    namespace = "com.boga.kidgame"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.example.kidsfocusmath"
+        applicationId = "com.boga.kidgame"
         minSdk = 24
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.3.0"
+        versionCode = 5
+        versionName = "0.5.0"
     }
 
     compileOptions {
@@ -23,13 +23,10 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
-
-    buildFeatures {
-        viewBinding = false
-    }
 }
 
 dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("androidx.activity:activity-ktx:1.9.3")
 }
