@@ -475,39 +475,28 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             background = rounded(color, 23)
-            elevation = dp(2).toFloat()
-            minimumHeight = dp(68)
+            // 不再加 icon 容器 elevation，避免部分 Samsung 裝置出現「圓形後面又有一個方格」的陰影/殘影。
+            elevation = dp(1).toFloat()
+            minimumHeight = dp(74)
             isClickable = true
             isFocusable = true
-            setPadding(dp(9), dp(6), dp(9), dp(6))
+            setPadding(dp(10), dp(8), dp(10), dp(8))
             setOnClickListener {
                 performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
                 onClick()
             }
 
-            // 與遊戲卡一致：每日任務 / 星星寶箱也只使用一層白色圓形底座。
-            val iconBubble = FrameLayout(this@MainActivity).apply {
-                background = GradientDrawable().apply {
-                    shape = GradientDrawable.OVAL
-                    setColor(0xFFFBFBFB.toInt())
-                }
-                elevation = dp(1).toFloat()
-                isClickable = false
-                isFocusable = false
-            }
-            val iv = ImageView(this@MainActivity).apply {
-                setImageResource(iconRes)
-                scaleType = ImageView.ScaleType.FIT_CENTER
-                isClickable = false
-                isFocusable = false
-            }
-            iconBubble.addView(iv, FrameLayout.LayoutParams(dp(43), dp(43), Gravity.CENTER))
-            addView(iconBubble, LinearLayout.LayoutParams(dp(54), dp(54)))
+            // v0.6.8：圖示與白色圓形底座由同一個 Canvas View 一次畫出。
+            // 沒有 FrameLayout、沒有 ImageView 方形背景、沒有第二層底座。
+            addView(
+                makeMissionRoundIcon(iconRes),
+                LinearLayout.LayoutParams(dp(58), dp(58))
+            )
 
             val words = LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(6), 0, 0, 0)
+                setPadding(dp(8), 0, 0, 0)
 
                 addView(
                     text(title, 15f, 0xFF4A2E1D.toInt(), true, Gravity.START or Gravity.CENTER_VERTICAL).apply {
@@ -542,15 +531,37 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
         }
     }
 
-    private fun gameIconRes(game: GameType): Int = when (game) {
-        GameType.FIND -> R.drawable.game_find
-        GameType.SAME -> R.drawable.game_same
-        GameType.COLOR -> R.drawable.game_color
-        GameType.MAZE -> R.drawable.game_maze
-        GameType.MATCH -> R.drawable.game_match
-        GameType.COUNT -> R.drawable.game_count
-        GameType.MATH -> R.drawable.game_math
-        GameType.MEMORY -> R.drawable.game_memory
+    /**
+     * 每日任務 / 星星寶箱的圓形圖示。
+     * 直接在同一個 View 畫白色圓 + 圖示，不再疊 FrameLayout / ImageView，
+     * 因此不會再看到圓形後方的縮小方格或白色殘角。
+     */
+    private fun makeMissionRoundIcon(iconRes: Int): View = object : View(this) {
+        private val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            style = Paint.Style.FILL
+        }
+        private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = 0xFFEDE7DF.toInt()
+            style = Paint.Style.STROKE
+            strokeWidth = dp(1).toFloat()
+        }
+        private val drawable by lazy { ContextCompat.getDrawable(this@MainActivity, iconRes)?.mutate() }
+
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            val cx = width / 2f
+            val cy = height / 2f
+            val radius = min(width, height) * 0.46f
+            canvas.drawCircle(cx, cy, radius, bgPaint)
+            canvas.drawCircle(cx, cy, radius, borderPaint)
+
+            val iconSize = (min(width, height) * 0.67f).toInt()
+            val left = (width - iconSize) / 2
+            val top = (height - iconSize) / 2
+            drawable?.setBounds(left, top, left + iconSize, top + iconSize)
+            drawable?.draw(canvas)
+        }
     }
 
     private fun gameCardColor(game: GameType): Int = when (game) {
@@ -582,36 +593,20 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
             background = rounded(gameCardColor(game), 22, Color.WHITE, 2)
             elevation = dp(2).toFloat()
             minimumHeight = dp(68)
-            setPadding(dp(8), dp(6), dp(10), dp(6))
+            setPadding(dp(9), dp(6), dp(11), dp(6))
             isClickable = true
             isFocusable = true
             contentDescription = game.title
         }
 
-        // v0.6.7：單一圓形底座。圖示 PNG 已去除舊的方形/白色/粉彩底，
-        // 所以不會再出現「圓形裡還有一個方格」或四角殘影。
-        val iconBubble = FrameLayout(this).apply {
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(0xFFFBFBFB.toInt())
-            }
-            elevation = dp(1).toFloat()
+        // v0.6.8：真正的「單一圓形底座」。
+        // 白色圓形與圖案都由同一個 View 直接繪製；不再把 PNG 方格塞進圓形容器。
+        val icon = makeGameRoundIcon(game).apply {
             isClickable = false
             isFocusable = false
-        }
-
-        val icon = ImageView(this).apply {
-            setImageResource(gameIconRes(game))
-            scaleType = ImageView.ScaleType.FIT_CENTER
-            adjustViewBounds = true
             contentDescription = game.title
-            isClickable = false
-            isFocusable = false
         }
-        iconBubble.addView(icon, FrameLayout.LayoutParams(
-            dp(38), dp(38), Gravity.CENTER
-        ))
-        tile.addView(iconBubble, LinearLayout.LayoutParams(dp(50), dp(50)))
+        tile.addView(icon, LinearLayout.LayoutParams(dp(52), dp(52)))
 
         val title = text(
             game.title,
@@ -630,15 +625,14 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
         tile.addView(
             title,
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f).apply {
-                marginStart = dp(8)
+                marginStart = dp(10)
             }
         )
 
         tile.setOnClickListener {
             tile.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
 
-            // v0.6.4：先朗讀卡片名稱，朗讀完成後才切到遊戲頁。
-            // 這樣 renderScreen()/showGame() 的 tts.stop() 不會再把名稱切掉。
+            // 先完整朗讀卡片名稱，再進遊戲，避免切頁 tts.stop() 吃掉卡片語音。
             if (ttsReady) {
                 pendingGameNavigation = game
                 tts.stop()
@@ -646,7 +640,6 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
                 tts.setSpeechRate(0.86f)
                 tts.speak(game.title, TextToSpeech.QUEUE_FLUSH, null, "home_game_title")
 
-                // 某些手機 TTS 不一定回傳 onDone；1.5 秒後保底進頁。
                 handler.postDelayed({
                     if (pendingGameNavigation == game) {
                         pendingGameNavigation = null
@@ -659,6 +652,133 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
         }
 
         return tile
+    }
+
+    /**
+     * 首頁 8 個遊戲圖示：單一白色圓形底座 + 直接繪製圖案。
+     * 完全不使用 game_*.png，所以不可能再出現 PNG 原本的方框、白角、殘影。
+     */
+    private fun makeGameRoundIcon(game: GameType): View = object : View(this) {
+        private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val bg = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            style = Paint.Style.FILL
+        }
+        private val border = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = 0xFFEDE7DF.toInt()
+            style = Paint.Style.STROKE
+            strokeWidth = dp(1).toFloat()
+        }
+
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            val cx = width / 2f
+            val cy = height / 2f
+            val s = min(width, height).toFloat()
+            val r = s * 0.46f
+
+            // 唯一一層白色圓形底座
+            canvas.drawCircle(cx, cy, r, bg)
+            canvas.drawCircle(cx, cy, r, border)
+
+            when (game) {
+                GameType.FIND -> drawFind(canvas, cx, cy, s)
+                GameType.SAME -> drawSame(canvas, cx, cy, s)
+                GameType.COLOR -> drawColor(canvas, cx, cy, s)
+                GameType.MAZE -> drawMaze(canvas, cx, cy, s)
+                GameType.MATCH -> drawMatch(canvas, cx, cy, s)
+                GameType.COUNT -> drawLabel(canvas, "123", cx, cy, s, 0xFF07969B.toInt(), 0.34f)
+                GameType.MATH -> drawLabel(canvas, "1+2", cx, cy, s, 0xFF2E6FD8.toInt(), 0.29f)
+                GameType.MEMORY -> drawMemory(canvas, cx, cy, s)
+            }
+        }
+
+        private fun drawFind(c: Canvas, cx: Float, cy: Float, s: Float) {
+            p.style = Paint.Style.STROKE
+            p.strokeCap = Paint.Cap.ROUND
+            p.strokeWidth = s * 0.075f
+            p.color = 0xFF138AC4.toInt()
+            c.drawCircle(cx - s * 0.06f, cy - s * 0.05f, s * 0.20f, p)
+            c.drawLine(cx + s * 0.08f, cy + s * 0.10f, cx + s * 0.25f, cy + s * 0.27f, p)
+        }
+
+        private fun drawSame(c: Canvas, cx: Float, cy: Float, s: Float) {
+            p.style = Paint.Style.FILL
+            p.color = 0xFFF63E63.toInt()
+            c.drawCircle(cx - s * 0.10f, cy, s * 0.15f, p)
+            p.color = 0xFFF04E70.toInt()
+            c.drawCircle(cx + s * 0.10f, cy, s * 0.15f, p)
+        }
+
+        private fun drawColor(c: Canvas, cx: Float, cy: Float, s: Float) {
+            p.style = Paint.Style.FILL
+            p.color = 0xFF7048DC.toInt()
+            c.drawCircle(cx - s * 0.13f, cy + s * 0.01f, s * 0.13f, p)
+            p.color = 0xFFFFAD21.toInt()
+            val a = s * 0.13f
+            c.drawRoundRect(
+                RectF(cx + s * 0.02f, cy - a, cx + s * 0.02f + a * 2, cy + a),
+                s * 0.025f,
+                s * 0.025f,
+                p
+            )
+        }
+
+        private fun drawMaze(c: Canvas, cx: Float, cy: Float, s: Float) {
+            p.style = Paint.Style.STROKE
+            p.strokeCap = Paint.Cap.SQUARE
+            p.strokeJoin = Paint.Join.MITER
+            p.strokeWidth = s * 0.075f
+            p.color = 0xFF2D72D8.toInt()
+            val path = Path().apply {
+                moveTo(cx - s * 0.22f, cy - s * 0.20f)
+                lineTo(cx + s * 0.18f, cy - s * 0.20f)
+                lineTo(cx + s * 0.18f, cy + s * 0.02f)
+                lineTo(cx - s * 0.03f, cy + s * 0.02f)
+                lineTo(cx - s * 0.03f, cy + s * 0.20f)
+                lineTo(cx + s * 0.23f, cy + s * 0.20f)
+            }
+            c.drawPath(path, p)
+        }
+
+        private fun drawMatch(c: Canvas, cx: Float, cy: Float, s: Float) {
+            p.style = Paint.Style.STROKE
+            p.strokeCap = Paint.Cap.ROUND
+            p.strokeWidth = s * 0.075f
+            p.color = 0xFF674FC5.toInt()
+            c.drawLine(cx - s * 0.17f, cy - s * 0.10f, cx + s * 0.17f, cy + s * 0.11f, p)
+            p.style = Paint.Style.FILL
+            p.color = 0xFFF53D69.toInt()
+            c.drawCircle(cx - s * 0.18f, cy - s * 0.11f, s * 0.105f, p)
+            c.drawCircle(cx + s * 0.18f, cy + s * 0.12f, s * 0.105f, p)
+        }
+
+        private fun drawMemory(c: Canvas, cx: Float, cy: Float, s: Float) {
+            p.style = Paint.Style.FILL
+            p.color = 0xFFF25276.toInt()
+            c.drawCircle(cx - s * 0.12f, cy + s * 0.03f, s * 0.13f, p)
+            c.drawCircle(cx, cy - s * 0.08f, s * 0.15f, p)
+            c.drawCircle(cx + s * 0.13f, cy + s * 0.04f, s * 0.13f, p)
+        }
+
+        private fun drawLabel(
+            c: Canvas,
+            label: String,
+            cx: Float,
+            cy: Float,
+            s: Float,
+            color: Int,
+            textScale: Float
+        ) {
+            p.style = Paint.Style.FILL
+            p.color = color
+            p.typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            p.textAlign = Paint.Align.CENTER
+            p.textSize = s * textScale
+            val fm = p.fontMetrics
+            val baseline = cy - (fm.ascent + fm.descent) / 2f
+            c.drawText(label, cx, baseline, p)
+        }
     }
 
     private fun showGame(game: GameType) {
