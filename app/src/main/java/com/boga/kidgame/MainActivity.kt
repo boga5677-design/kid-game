@@ -608,7 +608,7 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
         )
 
         tile.setOnClickListener {
-            performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+            tile.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
 
             // v0.6.4：先朗讀卡片名稱，朗讀完成後才切到遊戲頁。
             // 這樣 renderScreen()/showGame() 的 tts.stop() 不會再把名稱切掉。
@@ -1436,7 +1436,7 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
         }
         scroll.addView(
             page,
-            ScrollView.LayoutParams(
+            ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             )
@@ -1714,7 +1714,7 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
         }
         scroll.addView(
             page,
-            ScrollView.LayoutParams(
+            ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             )

@@ -11,8 +11,8 @@ android {
         applicationId = "com.boga.kidgame"
         minSdk = 24
         targetSdk = 35
-        versionCode = 19
-        versionName = "0.6.4"
+        versionCode = 20
+        versionName = "0.6.5"
     }
 
     compileOptions {

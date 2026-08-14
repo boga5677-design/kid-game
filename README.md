@@ -160,3 +160,13 @@ v0.5.6 改成固定輪替 10 種題目：
 - 單字學習改為可捲動頁面，單字、中文與分類進度不再被底部裁切。
 - 發音練習改為可捲動頁面，底部辨識內容 / 分數不再被系統導覽列遮住。
 - 發音練習紅色按鈕文字改為「跟讀」。
+
+## v0.6.5 Build Fix
+
+修正 GitHub Actions 回報的 3 個 Kotlin 編譯錯誤：
+
+- `MainActivity.kt:611`：`performHapticFeedback` 改為 `tile.performHapticFeedback(...)`
+- `MainActivity.kt:1439`：`ScrollView.LayoutParams` 改為 `ViewGroup.LayoutParams`
+- `MainActivity.kt:1717`：`ScrollView.LayoutParams` 改為 `ViewGroup.LayoutParams`
+
+保留 v0.6.4 的朗讀、圖示白邊、單字學習切字、發音練習切字與「跟讀」功能。
