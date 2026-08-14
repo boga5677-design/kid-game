@@ -266,172 +266,175 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
     // ------------------------- HOME -------------------------
 
-    private fun showHome() {
-        syncDailyMission()
-        root.removeAllViews()
-        root.setBackgroundColor(0xFFFFF8E9.toInt())
 
-        val scroll = ScrollView(this).apply {
-            isFillViewport = true
-            isVerticalScrollBarEnabled = false
-            overScrollMode = View.OVER_SCROLL_NEVER
-        }
-        val content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(10), dp(10), dp(10), dp(28))
-        }
-        scroll.addView(content, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        ))
-        root.addView(scroll)
+private fun showHome() {
+    syncDailyMission()
+    root.removeAllViews()
+    root.setBackgroundColor(0xFFFFF8E9.toInt())
 
-        // 1. 頂端資料列：完全依預覽圖比例重新排版
-        content.addView(makeTopStats(), LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(78)
-        ))
-        content.addSpace(10)
+    // 以一頁為主要設計目標；ScrollView 只作為較矮手機的安全備援。
+    val scroll = ScrollView(this).apply {
+        isFillViewport = true
+        isVerticalScrollBarEnabled = false
+        overScrollMode = View.OVER_SCROLL_NEVER
+    }
+    val content = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(10), dp(8), dp(10), dp(12))
+    }
+    scroll.addView(content, FrameLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT,
+        ViewGroup.LayoutParams.WRAP_CONTENT
+    ))
+    root.addView(scroll)
 
-        // 2. 直接顯示任務卡，不再使用額外大標題
-        val missionRow = LinearLayout(this).apply {
+    // 最上方只保留真正有意義的星星 / 寶箱進度。
+    content.addView(makeTopStats(), LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, dp(58)
+    ))
+    content.addSpace(7)
+
+    val missionRow = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER
+    }
+    missionRow.addView(
+        makeMissionCard(
+            R.drawable.mission_calendar,
+            "每日任務",
+            "$dailyProgress/5",
+            0xFFF0F8D9.toInt(),
+            0xFF58A815.toInt()
+        ) { navigateTo(Screen.TreasureMap(MapFocus.DAILY)) },
+        LinearLayout.LayoutParams(0, dp(70), 1f).apply { marginEnd = dp(5) }
+    )
+    missionRow.addView(
+        makeMissionCard(
+            R.drawable.mission_treasure,
+            "星星寶箱",
+            if (canOpenStarChest()) "可開啟!" else "${starChestProgress()}/30",
+            0xFFFFF1D4.toInt(),
+            0xFFE37500.toInt()
+        ) { navigateTo(Screen.TreasureMap(MapFocus.CHEST)) },
+        LinearLayout.LayoutParams(0, dp(70), 1f).apply { marginStart = dp(5) }
+    )
+    content.addView(missionRow)
+    content.addSpace(6)
+
+    val pets = ImageView(this).apply {
+        setImageResource(R.drawable.home_pets)
+        scaleType = ImageView.ScaleType.CENTER_CROP
+        adjustViewBounds = true
+        background = rounded(0xFFFFF8E9.toInt(), 18)
+        clipToOutline = true
+        contentDescription = "偶貴老師、黑糖老師、熊熊老師"
+    }
+    content.addView(pets, LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, dp(128)
+    ))
+    content.addSpace(6)
+
+    val gameValues = GameType.values()
+    for (row in 0 until 4) {
+        val line = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
         }
-        missionRow.addView(
-            makeMissionCard(
-                R.drawable.mission_calendar,
-                "每日任務",
-                "$dailyProgress/5",
-                0xFFF0F8D9.toInt(),
-                0xFF58A815.toInt()
-            ) { navigateTo(Screen.TreasureMap(MapFocus.DAILY)) },
-            LinearLayout.LayoutParams(0, dp(88), 1f).apply { marginEnd = dp(5) }
-        )
-        missionRow.addView(
-            makeMissionCard(
-                R.drawable.mission_treasure,
-                "星星寶箱",
-                if (canOpenStarChest()) "可開啟!" else "${starChestProgress()}/30",
-                0xFFFFF1D4.toInt(),
-                0xFFE37500.toInt()
-            ) { navigateTo(Screen.TreasureMap(MapFocus.CHEST)) },
-            LinearLayout.LayoutParams(0, dp(88), 1f).apply { marginStart = dp(5) }
-        )
-        content.addView(missionRow)
-        content.addSpace(8)
-
-        // 3. 三毛孩：直接採用本次核准預覽圖中的偶貴、黑糖、熊熊
-        val pets = ImageView(this).apply {
-            setImageResource(R.drawable.home_pets)
-            scaleType = ImageView.ScaleType.CENTER_CROP
-            adjustViewBounds = true
-            background = rounded(0xFFFFF8E9.toInt(), 18)
-            clipToOutline = true
-            contentDescription = "偶貴老師、黑糖老師、熊熊老師"
+        repeat(2) { col ->
+            val index = row * 2 + col
+            val tile = makeGameTile(gameValues[index])
+            val lp = LinearLayout.LayoutParams(0, dp(74), 1f)
+            if (col == 0) lp.marginEnd = dp(5) else lp.marginStart = dp(5)
+            line.addView(tile, lp)
         }
-        content.addView(pets, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(160)
-        ))
-        content.addSpace(8)
-
-        val gameValues = GameType.values()
-        for (row in 0 until 4) {
-            val line = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-            }
-            repeat(2) { col ->
-                val index = row * 2 + col
-                val tile = makeGameTile(gameValues[index])
-                val lp = LinearLayout.LayoutParams(0, dp(88), 1f)
-                if (col == 0) lp.marginEnd = dp(5) else lp.marginStart = dp(5)
-                line.addView(tile, lp)
-            }
-            content.addView(line)
-            if (row < 3) content.addSpace(9)
-        }
-
-        content.addSpace(10)
-
-        val shapeQuick = text("⭐　點圖形看看　☝", 21f, brown, true).apply {
-            background = rounded(0xFFFFF0B7.toInt(), 24)
-            elevation = dp(2).toFloat()
-            setOnClickListener { navigateTo(Screen.Game(GameType.COLOR)) }
-        }
-        content.addView(shapeQuick, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(58)
-        ))
-
-        content.addSpace(9)
-
-        // 英文學習整合於安卓版；放在預覽主區塊下方，不破壞預覽版面
-        val english = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(16), dp(7), dp(16), dp(7))
-            background = rounded(0xFFDFF3FF.toInt(), 24)
-            elevation = dp(2).toFloat()
-            isClickable = true
-            isFocusable = true
-            addView(text("ABC", 24f, 0xFF2879CB.toInt(), true), LinearLayout.LayoutParams(dp(68), dp(48)))
-            addView(text("英文小教室", 20f, brown, true, Gravity.START or Gravity.CENTER_VERTICAL), LinearLayout.LayoutParams(0, dp(48), 1f))
-            addView(text("›", 30f, 0xFF2879CB.toInt(), true), LinearLayout.LayoutParams(dp(38), dp(48)))
-            setOnClickListener { navigateTo(Screen.EnglishHome) }
-        }
-        content.addView(english, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(64)
-        ))
-
-        content.addSpace(9)
-
-        val achievements = text("🏅 成就徽章　　已累積 ⭐ $stars", 17f, brown, true).apply {
-            background = rounded(0xFFFFE9A9.toInt(), 22)
-            setOnClickListener { navigateTo(Screen.Achievements) }
-        }
-        content.addView(achievements, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(56)
-        ))
+        content.addView(line)
+        if (row < 3) content.addSpace(6)
     }
 
-    private fun makeTopStats(): View {
-        val card = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            background = rounded(Color.WHITE, 28)
-            elevation = dp(4).toFloat()
-            setPadding(dp(10), dp(7), dp(10), dp(7))
-        }
+    content.addSpace(7)
 
-        val avatar = ImageView(this).apply {
-            setImageResource(R.drawable.kid_avatar)
-            scaleType = ImageView.ScaleType.CENTER_CROP
-            background = rounded(0xFFD9F4FF.toInt(), 50)
-            clipToOutline = true
-        }
-        card.addView(avatar, LinearLayout.LayoutParams(dp(58), dp(58)))
-
-        val name = text("小朋友", 24f, 0xFF4A2E1D.toInt(), true, Gravity.START or Gravity.CENTER_VERTICAL).apply {
+    val english = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(dp(14), dp(5), dp(14), dp(5))
+        background = rounded(0xFFDFF3FF.toInt(), 22)
+        elevation = dp(2).toFloat()
+        isClickable = true
+        isFocusable = true
+        addView(text("ABC", 21f, 0xFF2879CB.toInt(), true),
+            LinearLayout.LayoutParams(dp(58), dp(42)))
+        addView(text("英文小教室", 18f, brown, true,
+            Gravity.START or Gravity.CENTER_VERTICAL).apply {
             maxLines = 1
-            TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(this, 18, 24, 1, TypedValue.COMPLEX_UNIT_SP)
-        }
-        card.addView(name, LinearLayout.LayoutParams(0, dp(58), 1f).apply { marginStart = dp(8) })
-
-        card.addView(makeTopCounter(R.drawable.top_star, stars.toString()), LinearLayout.LayoutParams(dp(92), dp(58)))
-        card.addView(makeTopCounter(R.drawable.top_coin, (stars * 10).toString()), LinearLayout.LayoutParams(dp(104), dp(58)))
-        return card
+            TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
+                this, 14, 19, 1, TypedValue.COMPLEX_UNIT_SP
+            )
+        }, LinearLayout.LayoutParams(0, dp(42), 1f))
+        addView(text("›", 27f, 0xFF2879CB.toInt(), true),
+            LinearLayout.LayoutParams(dp(34), dp(42)))
+        setOnClickListener { navigateTo(Screen.EnglishHome) }
     }
+    content.addView(english, LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, dp(50)
+    ))
 
-    private fun makeTopCounter(iconRes: Int, value: String): View {
-        return LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            val iv = ImageView(this@MainActivity).apply {
-                setImageResource(iconRes)
-                scaleType = ImageView.ScaleType.FIT_CENTER
-            }
-            addView(iv, LinearLayout.LayoutParams(dp(40), dp(40)))
-            addView(text(value, 24f, 0xFF3B2417.toInt(), true), LinearLayout.LayoutParams(0, dp(48), 1f))
-        }
+    content.addSpace(7)
+
+    val achievements = text("🏅 我的徽章　　已累積 ⭐ $stars", 16f, brown, true).apply {
+        maxLines = 1
+        TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
+            this, 13, 17, 1, TypedValue.COMPLEX_UNIT_SP
+        )
+        background = rounded(0xFFFFE9A9.toInt(), 20)
+        setOnClickListener { navigateTo(Screen.Achievements) }
     }
+    content.addView(achievements, LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, dp(46)
+    ))
+}
+
+private fun makeTopStats(): View {
+    return LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        background = rounded(Color.WHITE, 24)
+        elevation = dp(3).toFloat()
+        setPadding(dp(12), dp(5), dp(8), dp(5))
+
+        addView(text("小小腦力樂園", 20f, 0xFF4A2E1D.toInt(), true,
+            Gravity.START or Gravity.CENTER_VERTICAL).apply {
+            maxLines = 1
+            TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
+                this, 15, 21, 1, TypedValue.COMPLEX_UNIT_SP
+            )
+        }, LinearLayout.LayoutParams(0, dp(46), 1f))
+
+        addView(makeTopCounter(R.drawable.top_star, stars.toString()),
+            LinearLayout.LayoutParams(dp(82), dp(46)))
+
+        addView(makeTopCounter(
+            R.drawable.mission_treasure,
+            if (canOpenStarChest()) "OPEN" else "${starChestProgress()}/30"
+        ), LinearLayout.LayoutParams(dp(104), dp(46)))
+    }
+}
+
+private fun makeTopCounter(iconRes: Int, value: String): View {
+    return LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER
+        val iv = ImageView(this@MainActivity).apply {
+            setImageResource(iconRes)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+        }
+        addView(iv, LinearLayout.LayoutParams(dp(32), dp(32)))
+        addView(text(value, 17f, 0xFF3B2417.toInt(), true).apply {
+            maxLines = 1
+            TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
+                this, 12, 18, 1, TypedValue.COMPLEX_UNIT_SP
+            )
+        }, LinearLayout.LayoutParams(0, dp(38), 1f))
+    }
+}
 
     private fun makeMissionCard(
         iconRes: Int,
@@ -457,7 +460,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                 setImageResource(iconRes)
                 scaleType = ImageView.ScaleType.FIT_CENTER
             }
-            addView(iv, LinearLayout.LayoutParams(dp(62), dp(62)))
+            addView(iv, LinearLayout.LayoutParams(dp(48), dp(48)))
             val words = LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER_VERTICAL
@@ -466,7 +469,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                     maxLines = 1
                     TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(this, 13, 17, 1, TypedValue.COMPLEX_UNIT_SP)
                 }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
-                addView(text(value, 27f, valueColor, true, Gravity.START).apply {
+                addView(text(value, 23f, valueColor, true, Gravity.START).apply {
                     maxLines = 1
                 }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.3f))
             }
@@ -524,20 +527,20 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             background = rounded(Color.WHITE, 50)
             clipToOutline = true
         }
-        tile.addView(icon, LinearLayout.LayoutParams(dp(66), dp(66)))
+        tile.addView(icon, LinearLayout.LayoutParams(dp(50), dp(50)))
 
         val words = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(7), 0, 0, 0)
         }
-        val title = text(game.title, 20f, 0xFF4B2C18.toInt(), true, Gravity.START or Gravity.CENTER_VERTICAL).apply {
+        val title = text(game.title, 18f, 0xFF4B2C18.toInt(), true, Gravity.START or Gravity.CENTER_VERTICAL).apply {
             maxLines = 1
-            TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(this, 14, 20, 1, TypedValue.COMPLEX_UNIT_SP)
+            TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(this, 13, 18, 1, TypedValue.COMPLEX_UNIT_SP)
         }
-        val sub = text(game.subtitle, 14f, gameSubtitleColor(game), false, Gravity.START or Gravity.CENTER_VERTICAL).apply {
+        val sub = text(game.subtitle, 12f, gameSubtitleColor(game), false, Gravity.START or Gravity.CENTER_VERTICAL).apply {
             maxLines = 1
-            TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(this, 11, 15, 1, TypedValue.COMPLEX_UNIT_SP)
+            TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(this, 10, 13, 1, TypedValue.COMPLEX_UNIT_SP)
         }
         words.addView(title, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.2f))
         words.addView(sub, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 0.9f))
@@ -1577,163 +1580,220 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
     // ------------------------- TREASURE MAP -------------------------
 
-    private fun showTreasureMap(focus: MapFocus) {
-        syncDailyMission()
-        root.removeAllViews()
-        root.setBackgroundColor(0xFFFFF5D8.toInt())
 
-        val scroll = ScrollView(this).apply {
-            isFillViewport = true
-            isVerticalScrollBarEnabled = false
-        }
-        val page = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(12), dp(10), dp(12), dp(24))
-        }
-        scroll.addView(page, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        ))
-        root.addView(scroll)
+private fun showTreasureMap(focus: MapFocus) {
+    syncDailyMission()
+    root.removeAllViews()
+    root.setBackgroundColor(0xFFFFF5D8.toInt())
 
-        page.addView(makePageHeader("冒險藏寶圖"))
-        page.addSpace(8)
+    val scroll = ScrollView(this).apply {
+        isFillViewport = true
+        isVerticalScrollBarEnabled = false
+        overScrollMode = View.OVER_SCROLL_NEVER
+    }
+    val page = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(10), dp(8), dp(10), dp(16))
+    }
+    scroll.addView(page, FrameLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT,
+        ViewGroup.LayoutParams.WRAP_CONTENT
+    ))
+    root.addView(scroll)
 
-        val intro = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            background = rounded(Color.WHITE, 22)
-            elevation = dp(2).toFloat()
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-            addView(text(
-                if (focus == MapFocus.DAILY) "🗺️ 今天的冒險路線" else "🎁 星星寶箱探險",
-                22f, brown, true
-            ))
-            addView(text(
-                if (focus == MapFocus.DAILY)
-                    "完成遊戲就會往前走，今天已走到 $dailyProgress / 5"
-                else if (canOpenStarChest())
-                    "寶箱已經發光了！打開就能得到新徽章"
-                else
-                    "再收集 ${30 - starChestProgress()} 顆星，就能打開下一個寶箱",
-                15f, 0xFF765D49.toInt(), false
-            ).apply {
-                maxLines = 2
-                TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
-                    this, 13, 16, 1, TypedValue.COMPLEX_UNIT_SP
-                )
-            })
-        }
-        page.addView(intro, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(92)
-        ))
-        page.addSpace(8)
+    page.addView(makePageHeader("冒險藏寶圖"))
+    page.addSpace(6)
 
-        val map = TreasureMapView(
-            this,
-            dailyProgress = dailyProgress,
-            chestReady = canOpenStarChest()
-        )
-        page.addView(map, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(430)
-        ))
+    val statusRow = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER
+    }
+    statusRow.addView(
+        makeAdventureStatusCard(
+            R.drawable.mission_calendar,
+            "每日任務",
+            "$dailyProgress/5",
+            if (focus == MapFocus.DAILY) 0xFFE6F6C9.toInt() else 0xFFF4F8E9.toInt(),
+            0xFF4D9E27.toInt()
+        ) { toastFeedback("完成任一遊戲或英文挑戰，就會增加今日進度") },
+        LinearLayout.LayoutParams(0, dp(66), 1f).apply { marginEnd = dp(4) }
+    )
+    statusRow.addView(
+        makeAdventureStatusCard(
+            R.drawable.mission_treasure,
+            "星星寶箱",
+            if (canOpenStarChest()) "可開啟!" else "${starChestProgress()}/30",
+            if (focus == MapFocus.CHEST) 0xFFFFE5A8.toInt() else 0xFFFFF1D4.toInt(),
+            0xFFE37500.toInt()
+        ) {
+            if (canOpenStarChest()) openStarChest()
+            else toastFeedback("再收集 ${30 - starChestProgress()} 顆星就能開箱！")
+        },
+        LinearLayout.LayoutParams(0, dp(66), 1f).apply { marginStart = dp(4) }
+    )
+    page.addView(statusRow)
+    page.addSpace(6)
 
-        page.addSpace(10)
-
-        val missionCard = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = rounded(0xFFFFFDF4.toInt(), 22, 0x22A97932, 1)
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-            addView(text("🐾 每日任務路線", 20f, brown, true, Gravity.START))
-        }
-        val missionNames = listOf("勇敢出發", "動動腦", "再挑戰一次", "快到終點了", "完成今日冒險")
-        missionNames.forEachIndexed { index, title ->
-            val done = dailyProgress > index
-            val row = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                val badge = text(if (done) "✓" else "${index + 1}", 18f, Color.WHITE, true).apply {
-                    background = rounded(if (done) 0xFF69B94A.toInt() else 0xFFD5A95A.toInt(), 18)
-                }
-                addView(badge, LinearLayout.LayoutParams(dp(38), dp(38)))
-                addView(text(title, 16f, brown, true, Gravity.START or Gravity.CENTER_VERTICAL),
-                    LinearLayout.LayoutParams(0, dp(42), 1f).apply { marginStart = dp(8) })
-                addView(text(if (done) "完成" else "去挑戰", 14f,
-                    if (done) 0xFF4C9A38.toInt() else 0xFF2F78C4.toInt(), true),
-                    LinearLayout.LayoutParams(dp(70), dp(42)))
-                isClickable = true
-                isFocusable = true
-                setOnClickListener {
-                    performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-                    navigateTo(Screen.Game(GameType.values()[index]))
-                }
+    val map = TreasureMapView(
+        context = this,
+        dailyProgress = dailyProgress,
+        chestReady = canOpenStarChest(),
+        gameTitles = GameType.values().map { it.title },
+        gameEmojis = GameType.values().map { it.emoji },
+        onNodeClick = { index ->
+            if (index in GameType.values().indices) {
+                root.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                navigateTo(Screen.Game(GameType.values()[index]))
             }
-            missionCard.addView(row, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(44)
-            ))
+        },
+        onChestClick = {
+            if (canOpenStarChest()) openStarChest()
+            else toastFeedback("寶箱還沒集滿：${starChestProgress()}/30 ⭐")
         }
-        page.addView(missionCard)
+    )
+    page.addView(map, LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, dp(610)
+    ))
+    page.addSpace(7)
 
-        page.addSpace(10)
+    val badgeCard = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        background = rounded(0xFFFFF7E8.toInt(), 22, 0x22B38335, 1)
+        setPadding(dp(10), dp(8), dp(10), dp(8))
+        isClickable = true
+        isFocusable = true
+        setOnClickListener { navigateTo(Screen.Achievements) }
 
-        val chestCard = LinearLayout(this).apply {
+        addView(text("🏅 我的徽章", 18f, brown, true, Gravity.START))
+        addView(makeTreasureBadgeStrip(), LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(66)
+        ))
+    }
+    page.addView(badgeCard, LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, dp(104)
+    ))
+}
+
+private fun makeAdventureStatusCard(
+    iconRes: Int,
+    titleText: String,
+    valueText: String,
+    cardColor: Int,
+    valueColor: Int,
+    onClick: () -> Unit
+): View {
+    return LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        background = rounded(cardColor, 19, Color.WHITE, 1)
+        elevation = dp(2).toFloat()
+        setPadding(dp(8), dp(5), dp(8), dp(5))
+        isClickable = true
+        isFocusable = true
+        setOnClickListener {
+            performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+            onClick()
+        }
+
+        addView(ImageView(this@MainActivity).apply {
+            setImageResource(iconRes)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+        }, LinearLayout.LayoutParams(dp(43), dp(43)))
+
+        addView(LinearLayout(this@MainActivity).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(5), 0, 0, 0)
+            addView(text(titleText, 13f, brown, true, Gravity.START).apply {
+                maxLines = 1
+                TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
+                    this, 11, 14, 1, TypedValue.COMPLEX_UNIT_SP
+                )
+            }, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 0.9f
+            ))
+            addView(text(valueText, 21f, valueColor, true, Gravity.START).apply {
+                maxLines = 1
+                TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
+                    this, 15, 22, 1, TypedValue.COMPLEX_UNIT_SP
+                )
+            }, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.15f
+            ))
+        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
+    }
+}
+
+private fun makeTreasureBadgeStrip(): View {
+    val row = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER
+    }
+
+    val icons = listOf("🗺️", "🐾", "🌟", "👑")
+    val names = listOf("探險家", "尋寶王", "星光勇者", "寶藏大師")
+    for (i in icons.indices) {
+        val unlocked = chestClaims > i
+        val badge = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             background = rounded(
-                if (canOpenStarChest()) 0xFFFFE49A.toInt() else 0xFFFFF2D8.toInt(),
-                24,
-                if (canOpenStarChest()) 0xFFFFB300.toInt() else 0x33A97932,
-                2
+                if (unlocked) 0xFFFFE6A1.toInt() else 0xFFEAE6DF.toInt(),
+                18
             )
-            elevation = dp(3).toFloat()
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-
-            addView(text(if (canOpenStarChest()) "✨ 🎁 ✨" else "🎁", 38f))
-            addView(text(
-                if (canOpenStarChest()) "星星寶箱可以打開了！" else "星星寶箱 ${starChestProgress()}/30",
-                20f, brown, true
-            ))
-            addView(text(
-                if (canOpenStarChest()) "點一下開箱，獲得一枚新的冒險徽章" else "每累積 30 顆星，就能開一次寶箱",
-                14f, 0xFF7B624A.toInt(), false
-            ))
-
-            isClickable = true
-            isFocusable = true
-            setOnClickListener {
-                if (canOpenStarChest()) {
-                    openStarChest()
-                } else {
-                    performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-                    toastFeedback("還差 ${30 - starChestProgress()} 顆星就能開箱！")
-                }
-            }
+            addView(text(if (unlocked) icons[i] else "🔒", 24f),
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.15f))
+            addView(text(names[i], 10f, 0xFF6C513B.toInt(), true).apply {
+                maxLines = 1
+                TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
+                    this, 8, 11, 1, TypedValue.COMPLEX_UNIT_SP
+                )
+            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 0.7f))
         }
-        page.addView(chestCard, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(156)
-        ))
+        row.addView(badge, LinearLayout.LayoutParams(0, dp(58), 1f).apply {
+            setMargins(dp(3), dp(3), dp(3), dp(3))
+        })
+    }
+    return row
+}
+
+private fun openStarChest() {
+    if (!canOpenStarChest()) return
+
+    chestClaims++
+    saveProgress()
+    tone.startTone(ToneGenerator.TONE_PROP_ACK, 180)
+    root.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+
+    val badgeTitle = chestBadgeTitle(chestClaims)
+    val badgeIcon = chestBadgeIcon(chestClaims)
+
+    val content = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        gravity = Gravity.CENTER
+        setPadding(dp(18), dp(12), dp(18), dp(8))
+        addView(text("✨  寶箱打開了！  ✨", 22f, 0xFFE07B00.toInt(), true))
+        addView(text("🎁", 68f))
+        addView(text(badgeIcon, 58f))
+        addView(text("獲得「$badgeTitle」徽章", 21f, brown, true).apply {
+            maxLines = 2
+            TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
+                this, 16, 22, 1, TypedValue.COMPLEX_UNIT_SP
+            )
+        })
+        addView(text("徽章已收藏到「我的徽章」", 14f, 0xFF7B624A.toInt(), false))
     }
 
-    private fun openStarChest() {
-        if (!canOpenStarChest()) return
-        chestClaims++
-        saveProgress()
-        tone.startTone(ToneGenerator.TONE_PROP_ACK, 180)
-        root.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-
-        val badgeTitle = chestBadgeTitle(chestClaims)
-        val badgeIcon = chestBadgeIcon(chestClaims)
-        androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("$badgeIcon 獲得新徽章！")
-            .setMessage("你打開了星星寶箱，得到「$badgeTitle」徽章！\n\n繼續玩遊戲、收集星星，還能找到更多寶藏。")
-            .setPositiveButton("收下徽章") { _, _ ->
-                renderScreen(Screen.TreasureMap(MapFocus.CHEST))
-            }
-            .setNeutralButton("看成就") { _, _ ->
-                navigateTo(Screen.Achievements)
-            }
-            .show()
-    }
+    androidx.appcompat.app.AlertDialog.Builder(this)
+        .setView(content)
+        .setPositiveButton("收下徽章") { _, _ ->
+            renderScreen(Screen.TreasureMap(MapFocus.CHEST))
+        }
+        .setNeutralButton("看全部徽章") { _, _ ->
+            navigateTo(Screen.Achievements)
+        }
+        .show()
+}
 
     // ------------------------- ACHIEVEMENTS -------------------------
 
@@ -1808,366 +1868,433 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
     // ------------------------- CUSTOM TREASURE MAP VIEW -------------------------
 
-    private class TreasureMapView(
-        context: Context,
-        private val dailyProgress: Int,
-        private val chestReady: Boolean
-    ) : View(context) {
-        private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-        private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-        private val density = resources.displayMetrics.density
-        private fun dp(v: Float) = v * density
 
-        private val points = arrayOf(
-            PointF(0.18f, 0.17f),
-            PointF(0.72f, 0.29f),
-            PointF(0.28f, 0.45f),
-            PointF(0.75f, 0.61f),
-            PointF(0.28f, 0.77f),
-            PointF(0.73f, 0.85f)
+private class TreasureMapView(
+    context: Context,
+    private val dailyProgress: Int,
+    private val chestReady: Boolean,
+    private val gameTitles: List<String>,
+    private val gameEmojis: List<String>,
+    private val onNodeClick: (Int) -> Unit,
+    private val onChestClick: () -> Unit
+) : View(context) {
+
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val density = resources.displayMetrics.density
+    private fun dp(v: Float) = v * density
+
+    private val nodeRects = MutableList(8) { RectF() }
+    private val chestRect = RectF()
+
+    // 參考核准預覽圖：由左上一路蜿蜒到右下寶箱。
+    private val nodePoints = arrayOf(
+        PointF(0.21f, 0.16f),
+        PointF(0.52f, 0.25f),
+        PointF(0.77f, 0.36f),
+        PointF(0.22f, 0.47f),
+        PointF(0.51f, 0.56f),
+        PointF(0.77f, 0.67f),
+        PointF(0.23f, 0.76f),
+        PointF(0.51f, 0.85f)
+    )
+    private val chestPoint = PointF(0.82f, 0.88f)
+
+    private val nodeColors = intArrayOf(
+        0xFF5A9FE8.toInt(),
+        0xFFF17D7D.toInt(),
+        0xFFF3A642.toInt(),
+        0xFF77BA55.toInt(),
+        0xFF9574D9.toInt(),
+        0xFF43B7A5.toInt(),
+        0xFF5A9FE8.toInt(),
+        0xFFF3A642.toInt()
+    )
+
+    init {
+        isClickable = true
+        isFocusable = true
+        importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
+        contentDescription = "冒險藏寶圖，包含八個可點選遊戲關卡與星星寶箱"
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        val w = width.toFloat()
+        val h = height.toFloat()
+        if (w <= 0f || h <= 0f) return
+
+        drawParchment(canvas, w, h)
+        drawRiver(canvas, w, h)
+        drawScenery(canvas, w, h)
+
+        val pts = nodePoints.map { PointF(it.x * w, it.y * h) }
+        val chest = PointF(chestPoint.x * w, chestPoint.y * h)
+
+        drawRoute(canvas, pts, chest)
+
+        pts.forEachIndexed { index, p ->
+            drawNode(canvas, index, p.x, p.y)
+        }
+
+        drawChest(canvas, chest.x, chest.y, chestReady)
+    }
+
+    private fun drawParchment(canvas: Canvas, w: Float, h: Float) {
+        paint.style = Paint.Style.FILL
+        paint.shader = LinearGradient(
+            0f, 0f, 0f, h,
+            intArrayOf(
+                0xFFFFF4C9.toInt(),
+                0xFFF5E4AE.toInt(),
+                0xFFFFF0C2.toInt()
+            ),
+            null,
+            Shader.TileMode.CLAMP
+        )
+        canvas.drawRoundRect(0f, 0f, w, h, dp(25f), dp(25f), paint)
+        paint.shader = null
+
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = dp(3f)
+        paint.color = 0xFFD7A95C.toInt()
+        canvas.drawRoundRect(dp(2f), dp(2f), w - dp(2f), h - dp(2f), dp(25f), dp(25f), paint)
+
+        // 上方與下方柔和草地
+        paint.style = Paint.Style.FILL
+        paint.color = 0xFFB9DB70.toInt()
+        canvas.drawOval(-w * 0.08f, h * 0.04f, w * 0.48f, h * 0.30f, paint)
+        canvas.drawOval(w * 0.48f, h * 0.01f, w * 1.10f, h * 0.28f, paint)
+        canvas.drawOval(-w * 0.10f, h * 0.68f, w * 0.55f, h * 1.03f, paint)
+        canvas.drawOval(w * 0.45f, h * 0.68f, w * 1.10f, h * 1.02f, paint)
+    }
+
+    private fun drawRiver(canvas: Canvas, w: Float, h: Float) {
+        val river = Path().apply {
+            moveTo(-dp(8f), h * 0.23f)
+            cubicTo(w * 0.18f, h * 0.28f, w * 0.05f, h * 0.47f, w * 0.29f, h * 0.51f)
+            cubicTo(w * 0.48f, h * 0.54f, w * 0.43f, h * 0.69f, w * 0.64f, h * 0.69f)
+            cubicTo(w * 0.83f, h * 0.68f, w * 0.77f, h * 0.51f, w + dp(8f), h * 0.47f)
+        }
+
+        paint.style = Paint.Style.STROKE
+        paint.strokeCap = Paint.Cap.ROUND
+        paint.strokeWidth = dp(34f)
+        paint.color = 0xFF8DD5E7.toInt()
+        canvas.drawPath(river, paint)
+
+        paint.strokeWidth = dp(4f)
+        paint.color = 0xBFFFFFFF.toInt()
+        paint.pathEffect = DashPathEffect(floatArrayOf(dp(12f), dp(10f)), 0f)
+        canvas.drawPath(river, paint)
+        paint.pathEffect = null
+
+        // 小橋
+        drawBridge(canvas, w * 0.60f, h * 0.63f)
+    }
+
+    private fun drawBridge(canvas: Canvas, cx: Float, cy: Float) {
+        paint.style = Paint.Style.FILL
+        paint.color = 0xFFB97637.toInt()
+        canvas.drawRoundRect(
+            cx - dp(31f), cy - dp(9f),
+            cx + dp(31f), cy + dp(9f),
+            dp(5f), dp(5f), paint
+        )
+        paint.color = 0xFFE0A35B.toInt()
+        for (i in -2..2) {
+            val x = cx + dp(i * 12f)
+            canvas.drawRect(x - dp(3f), cy - dp(10f), x + dp(3f), cy + dp(10f), paint)
+        }
+    }
+
+    private fun drawScenery(canvas: Canvas, w: Float, h: Float) {
+        // 山丘 / 石頭
+        drawRock(canvas, w * 0.89f, h * 0.41f, 1.0f)
+        drawRock(canvas, w * 0.12f, h * 0.69f, 0.72f)
+        drawRock(canvas, w * 0.66f, h * 0.80f, 0.58f)
+
+        // 樹木
+        val trees = arrayOf(
+            0.37f to 0.16f, 0.64f to 0.16f,
+            0.31f to 0.37f, 0.87f to 0.56f,
+            0.11f to 0.61f, 0.37f to 0.69f
+        )
+        trees.forEachIndexed { index, pos ->
+            drawTree(canvas, pos.first * w, pos.second * h, if (index % 2 == 0) 0.85f else 0.70f)
+        }
+
+        // 花朵散點
+        val flowers = arrayOf(
+            0.08f to 0.33f, 0.43f to 0.34f, 0.68f to 0.28f,
+            0.92f to 0.33f, 0.14f to 0.56f, 0.42f to 0.49f,
+            0.70f to 0.47f, 0.92f to 0.73f, 0.34f to 0.90f,
+            0.64f to 0.91f
+        )
+        flowers.forEachIndexed { i, pos ->
+            drawFlower(canvas, pos.first * w, pos.second * h, i % 3)
+        }
+
+        // 小帆船，呼應預覽圖左側
+        drawBoat(canvas, w * 0.08f, h * 0.44f)
+    }
+
+    private fun drawRoute(canvas: Canvas, pts: List<PointF>, chest: PointF) {
+        val all = pts + chest
+        val route = Path()
+        route.moveTo(all.first().x, all.first().y)
+        for (i in 1 until all.size) {
+            val a = all[i - 1]
+            val b = all[i]
+            val midX = (a.x + b.x) / 2f
+            route.cubicTo(midX, a.y, midX, b.y, b.x, b.y)
+        }
+
+        paint.style = Paint.Style.STROKE
+        paint.strokeCap = Paint.Cap.ROUND
+        paint.strokeWidth = dp(5f)
+        paint.color = 0xFF8B6B43.toInt()
+        paint.pathEffect = DashPathEffect(floatArrayOf(dp(7f), dp(8f)), 0f)
+        canvas.drawPath(route, paint)
+        paint.pathEffect = null
+
+        // 終點箭頭
+        val last = all[all.lastIndex - 1]
+        val end = all.last()
+        val angle = atan2(end.y - last.y, end.x - last.x)
+        val ax = end.x - cos(angle) * dp(52f)
+        val ay = end.y - sin(angle) * dp(52f)
+        paint.style = Paint.Style.FILL
+        paint.color = 0xFF8B6B43.toInt()
+        val arrow = Path().apply {
+            moveTo(ax, ay)
+            lineTo(
+                ax - cos(angle - 0.55f) * dp(14f),
+                ay - sin(angle - 0.55f) * dp(14f)
+            )
+            lineTo(
+                ax - cos(angle + 0.55f) * dp(14f),
+                ay - sin(angle + 0.55f) * dp(14f)
+            )
+            close()
+        }
+        canvas.drawPath(arrow, paint)
+    }
+
+    private fun drawNode(canvas: Canvas, index: Int, cx: Float, cy: Float) {
+        val cardW = dp(92f)
+        val cardH = dp(72f)
+        val rect = RectF(
+            cx - cardW / 2f,
+            cy - cardH / 2f,
+            cx + cardW / 2f,
+            cy + cardH / 2f
+        )
+        nodeRects[index].set(rect)
+
+        // 卡片陰影
+        paint.style = Paint.Style.FILL
+        paint.color = 0x26000000
+        canvas.drawRoundRect(
+            RectF(rect.left + dp(2f), rect.top + dp(4f), rect.right + dp(2f), rect.bottom + dp(4f)),
+            dp(15f), dp(15f), paint
         )
 
-        override fun onDraw(canvas: Canvas) {
-            super.onDraw(canvas)
-            val w = width.toFloat()
-            val h = height.toFloat()
+        paint.color = 0xFFFFFCF4.toInt()
+        canvas.drawRoundRect(rect, dp(15f), dp(15f), paint)
 
-            paint.style = Paint.Style.FILL
-            paint.color = 0xFFFFE8AD.toInt()
-            canvas.drawRoundRect(0f, 0f, w, h, dp(24f), dp(24f), paint)
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = dp(2f)
+        paint.color = 0xFFE5C382.toInt()
+        canvas.drawRoundRect(rect, dp(15f), dp(15f), paint)
 
-            paint.style = Paint.Style.STROKE
-            paint.strokeWidth = dp(3f)
-            paint.color = 0xFFCF9C55.toInt()
-            canvas.drawRoundRect(dp(2f), dp(2f), w - dp(2f), h - dp(2f), dp(24f), dp(24f), paint)
+        // 關卡編號圓牌
+        paint.style = Paint.Style.FILL
+        paint.color = nodeColors[index]
+        canvas.drawCircle(rect.left + dp(13f), rect.top + dp(9f), dp(14f), paint)
+        textPaint.textAlign = Paint.Align.CENTER
+        textPaint.typeface = Typeface.create("sans-serif", Typeface.BOLD)
+        textPaint.color = Color.WHITE
+        textPaint.textSize = dp(12f)
+        canvas.drawText("${index + 1}", rect.left + dp(13f), rect.top + dp(13f), textPaint)
 
-            // river and little sea waves
-            paint.style = Paint.Style.STROKE
-            paint.strokeWidth = dp(12f)
-            paint.color = 0xFF91D9E8.toInt()
-            paint.strokeCap = Paint.Cap.ROUND
-            val river = Path().apply {
-                moveTo(w * 0.02f, h * 0.55f)
-                cubicTo(w * 0.22f, h * 0.48f, w * 0.45f, h * 0.63f, w * 0.63f, h * 0.54f)
-                cubicTo(w * 0.78f, h * 0.47f, w * 0.90f, h * 0.52f, w * 1.02f, h * 0.45f)
-            }
-            canvas.drawPath(river, paint)
-
-            // dotted adventure route
-            val route = Path()
-            val screenPoints = points.map { PointF(it.x * w, it.y * h) }
-            route.moveTo(screenPoints[0].x, screenPoints[0].y)
-            for (i in 1 until screenPoints.size) {
-                val a = screenPoints[i - 1]
-                val b = screenPoints[i]
-                val midX = (a.x + b.x) / 2f
-                route.cubicTo(midX, a.y, midX, b.y, b.x, b.y)
-            }
-            paint.style = Paint.Style.STROKE
-            paint.strokeWidth = dp(5f)
-            paint.color = 0xFF7A5B3C.toInt()
-            paint.pathEffect = DashPathEffect(floatArrayOf(dp(8f), dp(8f)), 0f)
-            canvas.drawPath(route, paint)
-            paint.pathEffect = null
-
-            // five islands / checkpoints
-            for (i in 0 until 5) {
-                val p = screenPoints[i]
-                val done = dailyProgress > i
-
-                paint.style = Paint.Style.FILL
-                paint.color = if (done) 0xFFA9D96B.toInt() else 0xFFC9E592.toInt()
-                canvas.drawOval(
-                    p.x - dp(46f), p.y - dp(28f),
-                    p.x + dp(46f), p.y + dp(28f), paint
-                )
-
-                paint.color = if (done) 0xFF5DA63D.toInt() else 0xFFF8F1D8.toInt()
-                canvas.drawCircle(p.x, p.y, dp(20f), paint)
-
-                textPaint.textAlign = Paint.Align.CENTER
-                textPaint.typeface = Typeface.DEFAULT_BOLD
-                textPaint.textSize = dp(18f)
-                textPaint.color = if (done) Color.WHITE else 0xFF7A5B3C.toInt()
-                canvas.drawText(if (done) "✓" else "${i + 1}", p.x, p.y + dp(6f), textPaint)
-            }
-
-            // chest at the end of the map
-            val c = screenPoints[5]
-            drawChest(canvas, c.x, c.y, chestReady)
-
-            // decorative compass
-            paint.style = Paint.Style.STROKE
-            paint.strokeWidth = dp(2f)
-            paint.color = 0x997A5B3C.toInt()
-            canvas.drawCircle(w * 0.86f, h * 0.14f, dp(25f), paint)
-            canvas.drawLine(w * 0.86f, h * 0.10f, w * 0.86f, h * 0.18f, paint)
-            canvas.drawLine(w * 0.82f, h * 0.14f, w * 0.90f, h * 0.14f, paint)
-            textPaint.textSize = dp(11f)
-            textPaint.color = 0xFF7A5B3C.toInt()
-            canvas.drawText("N", w * 0.86f, h * 0.085f, textPaint)
+        // 每日任務已完成節點：金色星星
+        if (index < dailyProgress.coerceAtMost(5)) {
+            textPaint.textSize = dp(17f)
+            textPaint.color = 0xFFFFB800.toInt()
+            canvas.drawText("★", rect.right - dp(10f), rect.top + dp(16f), textPaint)
         }
 
-        private fun drawChest(canvas: Canvas, cx: Float, cy: Float, open: Boolean) {
+        textPaint.color = 0xFF49301F.toInt()
+        textPaint.typeface = Typeface.create("sans-serif", Typeface.BOLD)
+        textPaint.textSize = dp(18f)
+        val emoji = gameEmojis.getOrNull(index).orEmpty()
+        canvas.drawText(emoji, cx, cy - dp(4f), textPaint)
+
+        textPaint.textSize = dp(10.5f)
+        val title = gameTitles.getOrNull(index).orEmpty()
+        canvas.drawText(title, cx, cy + dp(23f), textPaint)
+    }
+
+    private fun drawChest(canvas: Canvas, cx: Float, cy: Float, open: Boolean) {
+        val size = dp(86f)
+        chestRect.set(
+            cx - size * 0.58f, cy - size * 0.58f,
+            cx + size * 0.58f, cy + size * 0.58f
+        )
+
+        if (open) {
             paint.style = Paint.Style.FILL
-            paint.color = 0xFF8A4A20.toInt()
+            paint.color = 0x44FFD54A
+            canvas.drawCircle(cx, cy, dp(55f), paint)
+            paint.color = 0x33FFF176
+            canvas.drawCircle(cx, cy, dp(68f), paint)
+        }
+
+        // 箱身
+        paint.style = Paint.Style.FILL
+        paint.color = 0xFF9B5124.toInt()
+        canvas.drawRoundRect(
+            cx - dp(38f), cy - dp(17f),
+            cx + dp(38f), cy + dp(28f),
+            dp(8f), dp(8f), paint
+        )
+        paint.color = 0xFFFFB420.toInt()
+        canvas.drawRect(cx - dp(7f), cy - dp(17f), cx + dp(7f), cy + dp(28f), paint)
+        canvas.drawRect(cx - dp(38f), cy + dp(2f), cx + dp(38f), cy + dp(11f), paint)
+
+        if (open) {
+            paint.color = 0xFFB96A31.toInt()
+            val lid = Path().apply {
+                moveTo(cx - dp(37f), cy - dp(19f))
+                lineTo(cx - dp(26f), cy - dp(46f))
+                lineTo(cx + dp(31f), cy - dp(46f))
+                lineTo(cx + dp(39f), cy - dp(19f))
+                close()
+            }
+            canvas.drawPath(lid, paint)
+
+            textPaint.textAlign = Paint.Align.CENTER
+            textPaint.typeface = Typeface.create("sans-serif", Typeface.BOLD)
+            textPaint.textSize = dp(30f)
+            textPaint.color = 0xFFFFC400.toInt()
+            canvas.drawText("★", cx, cy - dp(50f), textPaint)
+        } else {
+            paint.color = 0xFFB96A31.toInt()
             canvas.drawRoundRect(
-                cx - dp(42f), cy - dp(18f),
-                cx + dp(42f), cy + dp(28f),
-                dp(8f), dp(8f), paint
+                cx - dp(38f), cy - dp(38f),
+                cx + dp(38f), cy - dp(13f),
+                dp(12f), dp(12f), paint
             )
-
-            paint.color = 0xFFFFB423.toInt()
-            canvas.drawRect(cx - dp(7f), cy - dp(18f), cx + dp(7f), cy + dp(28f), paint)
-            canvas.drawRect(cx - dp(42f), cy + dp(4f), cx + dp(42f), cy + dp(12f), paint)
-
-            paint.color = 0xFFB5642D.toInt()
-            if (open) {
-                val lid = Path().apply {
-                    moveTo(cx - dp(40f), cy - dp(22f))
-                    lineTo(cx - dp(28f), cy - dp(48f))
-                    lineTo(cx + dp(34f), cy - dp(48f))
-                    lineTo(cx + dp(42f), cy - dp(22f))
-                    close()
-                }
-                canvas.drawPath(lid, paint)
-                textPaint.textAlign = Paint.Align.CENTER
-                textPaint.typeface = Typeface.DEFAULT_BOLD
-                textPaint.textSize = dp(27f)
-                textPaint.color = 0xFFFFC400.toInt()
-                canvas.drawText("★", cx, cy - dp(55f), textPaint)
-            } else {
-                canvas.drawRoundRect(
-                    cx - dp(42f), cy - dp(37f),
-                    cx + dp(42f), cy - dp(12f),
-                    dp(12f), dp(12f), paint
-                )
-            }
-
-            paint.color = 0xFFFFD45A.toInt()
-            canvas.drawCircle(cx, cy + dp(5f), dp(7f), paint)
+            textPaint.textAlign = Paint.Align.CENTER
+            textPaint.typeface = Typeface.create("sans-serif", Typeface.BOLD)
+            textPaint.textSize = dp(13f)
+            textPaint.color = 0xFF6A3A19.toInt()
+            canvas.drawText("${if (chestReady) 30 else ""}", cx, cy + dp(8f), textPaint)
         }
+
+        textPaint.textAlign = Paint.Align.CENTER
+        textPaint.typeface = Typeface.create("sans-serif", Typeface.BOLD)
+        textPaint.textSize = dp(11f)
+        textPaint.color = 0xFF5D3B23.toInt()
+        canvas.drawText(
+            if (open) "點我開寶箱" else "星星寶箱",
+            cx, cy + dp(49f), textPaint
+        )
     }
 
-    // ------------------------- CUSTOM MAZE VIEW -------------------------
-
-    private class MazeView(
-        context: Context,
-        val onWin: () -> Unit
-    ) : View(context) {
-        private val p = Paint(Paint.ANTI_ALIAS_FLAG)
-        private var player = PointF()
-        private var goal = PointF()
-        private val walls = mutableListOf<RectF>()
-        private var dragging = false
-        private var ready = false
-        private val density = resources.displayMetrics.density
-        private fun dp(v: Float) = v * density
-
-        override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-            player = PointF(dp(34f), dp(52f))
-            goal = PointF(w - dp(36f), h - dp(44f))
-            walls.clear()
-            walls += RectF(w * .18f, dp(25f), w * .25f, h * .63f)
-            walls += RectF(w * .38f, h * .33f, w * .45f, h - dp(28f))
-            walls += RectF(w * .58f, dp(25f), w * .65f, h * .63f)
-            walls += RectF(w * .78f, h * .33f, w * .85f, h - dp(28f))
-            ready = true
-        }
-
-        override fun onDraw(canvas: Canvas) {
-            super.onDraw(canvas)
-            if (!ready) return
-            canvas.drawColor(0xFFEAF6FF.toInt())
-
-            p.color = 0xFF8B6C5E.toInt()
-            walls.forEach { canvas.drawRoundRect(it, dp(8f), dp(8f), p) }
-
-            p.color = 0xFFFFC107.toInt()
-            drawStar(canvas, player.x, player.y, dp(19f), p)
-
-            p.color = 0xFF915C2B.toInt()
-            canvas.drawRoundRect(goal.x-dp(24f), goal.y-dp(17f), goal.x+dp(24f), goal.y+dp(17f), dp(6f), dp(6f), p)
-            p.color = 0xFFFFC344.toInt()
-            canvas.drawRect(goal.x-dp(3f), goal.y-dp(17f), goal.x+dp(3f), goal.y+dp(17f), p)
-        }
-
-        override fun onTouchEvent(e: MotionEvent): Boolean {
-            when (e.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    dragging = hypot((e.x-player.x).toDouble(), (e.y-player.y).toDouble()) <= dp(48f)
-                }
-                MotionEvent.ACTION_MOVE -> if (dragging) {
-                    val x = e.x.coerceIn(dp(20f), width-dp(20f))
-                    val y = e.y.coerceIn(dp(20f), height-dp(20f))
-                    val r = RectF(x-dp(17f), y-dp(17f), x+dp(17f), y+dp(17f))
-                    if (walls.none { RectF.intersects(it, r) }) {
-                        player.x = x
-                        player.y = y
-                        invalidate()
-                        if (hypot((player.x-goal.x).toDouble(), (player.y-goal.y).toDouble()) < dp(45f)) {
-                            dragging = false
-                            onWin()
-                        }
-                    }
-                }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> dragging = false
-            }
-            return true
-        }
-
-        private fun drawStar(c: Canvas, cx: Float, cy: Float, r: Float, paint: Paint) {
-            val path = Path()
-            for (i in 0 until 10) {
-                val a = -Math.PI/2 + i*Math.PI/5
-                val rr = if (i%2==0) r else r*.45f
-                val x = cx + cos(a).toFloat()*rr
-                val y = cy + sin(a).toFloat()*rr
-                if (i==0) path.moveTo(x,y) else path.lineTo(x,y)
-            }
-            path.close()
-            c.drawPath(path, paint)
-        }
+    private fun drawTree(canvas: Canvas, x: Float, y: Float, scale: Float) {
+        paint.style = Paint.Style.FILL
+        paint.color = 0xFF8B5A2B.toInt()
+        canvas.drawRoundRect(
+            x - dp(4f) * scale, y,
+            x + dp(4f) * scale, y + dp(20f) * scale,
+            dp(2f), dp(2f), paint
+        )
+        paint.color = 0xFF5FA34A.toInt()
+        canvas.drawCircle(x, y - dp(4f) * scale, dp(15f) * scale, paint)
+        paint.color = 0xFF76BB58.toInt()
+        canvas.drawCircle(x - dp(8f) * scale, y, dp(10f) * scale, paint)
+        canvas.drawCircle(x + dp(8f) * scale, y, dp(10f) * scale, paint)
     }
 
-    // ------------------------- CUSTOM MATCH VIEW -------------------------
-
-    private class MatchView(
-        context: Context,
-        val onCorrect: () -> Unit,
-        val onWrong: () -> Unit,
-        val onComplete: () -> Unit
-    ) : View(context) {
-
-        data class Card(val id: Int, val side: Int, val emoji: String, var rect: RectF = RectF())
-
-        private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-        private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-        private val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.STROKE
-            strokeCap = Paint.Cap.ROUND
-        }
-        private val density = resources.displayMetrics.density
-        private fun dp(v: Float) = v * density
-
-        private val cards = mutableListOf<Card>()
-        private val matched = mutableSetOf<Int>()
-        private var dragStart = -1
-        private var selected = -1
-        private var dragPoint = PointF()
-
-        init {
-            val icons = listOf("🍎", "🐸", "🐼", "🍌")
-            icons.forEachIndexed { i, e -> cards += Card(i, 0, e) }
-            (0..3).shuffled().forEach { i -> cards += Card(i, 1, icons[i]) }
-        }
-
-        override fun onDraw(canvas: Canvas) {
-            super.onDraw(canvas)
-            canvas.drawColor(0xFFF7FBFF.toInt())
-
-            val top = dp(15f)
-            val gap = dp(11f)
-            val cardW = min(dp(125f), width * .34f)
-            val cardH = (height - top*2 - gap*3) / 4f
-            val leftX = dp(10f)
-            val rightX = width - dp(10f) - cardW
-
-            for (i in 0..3) {
-                val y = top + i*(cardH+gap)
-                cards[i].rect = RectF(leftX, y, leftX+cardW, y+cardH)
-                cards[4+i].rect = RectF(rightX, y, rightX+cardW, y+cardH)
-            }
-
-            linePaint.strokeWidth = dp(6f)
-            val lineColors = intArrayOf(
-                0xFFFF6B9A.toInt(), 0xFF4AA8FF.toInt(),
-                0xFFFFBE3C.toInt(), 0xFF65C96F.toInt()
-            )
-            matched.forEach { id ->
-                val a = cards.first { it.id == id && it.side == 0 }.rect
-                val b = cards.first { it.id == id && it.side == 1 }.rect
-                linePaint.color = lineColors[id]
-                canvas.drawLine(a.right, a.centerY(), b.left, b.centerY(), linePaint)
-            }
-
-            if (dragStart >= 0) {
-                val r = cards[dragStart].rect
-                linePaint.color = 0xFF7D6AEF.toInt()
-                val sx = if (cards[dragStart].side == 0) r.right else r.left
-                canvas.drawLine(sx, r.centerY(), dragPoint.x, dragPoint.y, linePaint)
-            }
-
-            cards.forEachIndexed { index, c ->
-                paint.color = when {
-                    c.id in matched -> 0xFFE7F8E4.toInt()
-                    index == selected || index == dragStart -> 0xFFFFF0B7.toInt()
-                    else -> Color.WHITE
-                }
-                canvas.drawRoundRect(c.rect, dp(18f), dp(18f), paint)
-
-                textPaint.textAlign = Paint.Align.CENTER
-                textPaint.textSize = min(dp(45f), cardH*.52f)
-                canvas.drawText(c.emoji, c.rect.centerX(), c.rect.centerY()+textPaint.textSize*.34f, textPaint)
-            }
-        }
-
-        private fun cardAt(x: Float, y: Float): Int {
-            return cards.indexOfFirst { it.id !in matched && RectF(it.rect).apply { inset(-dp(10f), -dp(10f)) }.contains(x,y) }
-        }
-
-        override fun onTouchEvent(e: MotionEvent): Boolean {
-            when (e.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    dragStart = cardAt(e.x, e.y)
-                    if (dragStart >= 0) {
-                        dragPoint.set(e.x, e.y)
-                        invalidate()
-                    }
-                }
-                MotionEvent.ACTION_MOVE -> if (dragStart >= 0) {
-                    dragPoint.set(e.x, e.y)
-                    invalidate()
-                }
-                MotionEvent.ACTION_UP -> {
-                    if (dragStart < 0) return true
-                    val start = dragStart
-                    val end = cardAt(e.x, e.y)
-                    val moved = hypot(
-                        (cards[start].rect.centerX()-e.x).toDouble(),
-                        (cards[start].rect.centerY()-e.y).toDouble()
-                    ) > dp(34f)
-
-                    if (end >= 0 && end != start && moved) {
-                        tryMatch(start, end)
-                        selected = -1
-                    } else {
-                        if (selected < 0) selected = start
-                        else if (selected == start) selected = -1
-                        else {
-                            tryMatch(selected, start)
-                            selected = -1
-                        }
-                    }
-                    dragStart = -1
-                    invalidate()
-                }
-                MotionEvent.ACTION_CANCEL -> {
-                    dragStart = -1
-                    invalidate()
-                }
-            }
-            return true
-        }
-
-        private fun tryMatch(a: Int, b: Int) {
-            val ca = cards[a]
-            val cb = cards[b]
-            if (ca.side != cb.side && ca.id == cb.id) {
-                matched += ca.id
-                onCorrect()
-                if (matched.size == 4) onComplete()
-            } else onWrong()
-        }
+    private fun drawRock(canvas: Canvas, x: Float, y: Float, scale: Float) {
+        paint.style = Paint.Style.FILL
+        paint.color = 0xFF9D9B8E.toInt()
+        canvas.drawOval(
+            x - dp(14f) * scale, y - dp(8f) * scale,
+            x + dp(14f) * scale, y + dp(8f) * scale, paint
+        )
+        paint.color = 0xFFC4C1AF.toInt()
+        canvas.drawOval(
+            x - dp(8f) * scale, y - dp(7f) * scale,
+            x + dp(4f) * scale, y + dp(2f) * scale, paint
+        )
     }
+
+    private fun drawFlower(canvas: Canvas, x: Float, y: Float, variant: Int) {
+        val petalColor = when (variant) {
+            0 -> 0xFFFFFFFF.toInt()
+            1 -> 0xFFFF8AA1.toInt()
+            else -> 0xFFFFE06A.toInt()
+        }
+        paint.style = Paint.Style.FILL
+        paint.color = petalColor
+        for (i in 0 until 5) {
+            val a = i * (Math.PI * 2 / 5)
+            val px = x + cos(a).toFloat() * dp(4f)
+            val py = y + sin(a).toFloat() * dp(4f)
+            canvas.drawCircle(px, py, dp(3f), paint)
+        }
+        paint.color = 0xFFF1A42B.toInt()
+        canvas.drawCircle(x, y, dp(2.5f), paint)
+    }
+
+    private fun drawBoat(canvas: Canvas, x: Float, y: Float) {
+        paint.style = Paint.Style.FILL
+        paint.color = 0xFF9A5728.toInt()
+        val hull = Path().apply {
+            moveTo(x - dp(18f), y)
+            lineTo(x + dp(18f), y)
+            lineTo(x + dp(11f), y + dp(12f))
+            lineTo(x - dp(10f), y + dp(12f))
+            close()
+        }
+        canvas.drawPath(hull, paint)
+
+        paint.color = 0xFF7C4925.toInt()
+        canvas.drawRect(x - dp(1.5f), y - dp(26f), x + dp(1.5f), y, paint)
+        paint.color = 0xFFFFF2C7.toInt()
+        val sail = Path().apply {
+            moveTo(x, y - dp(25f))
+            lineTo(x + dp(16f), y - dp(9f))
+            lineTo(x, y - dp(7f))
+            close()
+        }
+        canvas.drawPath(sail, paint)
+    }
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (event.action == MotionEvent.ACTION_UP) {
+            val x = event.x
+            val y = event.y
+            for (i in nodeRects.indices) {
+                val hit = RectF(nodeRects[i]).apply { inset(-dp(8f), -dp(8f)) }
+                if (hit.contains(x, y)) {
+                    performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                    onNodeClick(i)
+                    return true
+                }
+            }
+            val chestHit = RectF(chestRect).apply { inset(-dp(10f), -dp(10f)) }
+            if (chestHit.contains(x, y)) {
+                performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                onChestClick()
+                return true
+            }
+        }
+        return true
+    }
+}
+
 }
