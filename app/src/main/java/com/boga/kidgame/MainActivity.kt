@@ -485,11 +485,24 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
                 onClick()
             }
 
+            // 與遊戲卡一致：每日任務 / 星星寶箱也只使用一層白色圓形底座。
+            val iconBubble = FrameLayout(this@MainActivity).apply {
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(0xFFFBFBFB.toInt())
+                }
+                elevation = dp(1).toFloat()
+                isClickable = false
+                isFocusable = false
+            }
             val iv = ImageView(this@MainActivity).apply {
                 setImageResource(iconRes)
                 scaleType = ImageView.ScaleType.FIT_CENTER
+                isClickable = false
+                isFocusable = false
             }
-            addView(iv, LinearLayout.LayoutParams(dp(46), dp(46)))
+            iconBubble.addView(iv, FrameLayout.LayoutParams(dp(43), dp(43), Gravity.CENTER))
+            addView(iconBubble, LinearLayout.LayoutParams(dp(54), dp(54)))
 
             val words = LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.VERTICAL
@@ -575,10 +588,12 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
             contentDescription = game.title
         }
 
+        // v0.6.7：單一圓形底座。圖示 PNG 已去除舊的方形/白色/粉彩底，
+        // 所以不會再出現「圓形裡還有一個方格」或四角殘影。
         val iconBubble = FrameLayout(this).apply {
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                setColor(0xFFF9FAFC.toInt())
+                setColor(0xFFFBFBFB.toInt())
             }
             elevation = dp(1).toFloat()
             isClickable = false
@@ -590,17 +605,13 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
             scaleType = ImageView.ScaleType.FIT_CENTER
             adjustViewBounds = true
             contentDescription = game.title
-            // 子元件不攔截點擊，整張卡片都是同一個點擊區。
             isClickable = false
             isFocusable = false
-            setPadding(dp(6), dp(6), dp(6), dp(6))
         }
         iconBubble.addView(icon, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            Gravity.CENTER
+            dp(38), dp(38), Gravity.CENTER
         ))
-        tile.addView(iconBubble, LinearLayout.LayoutParams(dp(48), dp(48)))
+        tile.addView(iconBubble, LinearLayout.LayoutParams(dp(50), dp(50)))
 
         val title = text(
             game.title,
@@ -2100,11 +2111,23 @@ private fun makeAdventureStatusCard(
             onClick()
         }
 
-        addView(ImageView(this@MainActivity).apply {
-            setImageResource(iconRes)
-            scaleType = ImageView.ScaleType.CENTER_CROP
+        val iconBubble = FrameLayout(this@MainActivity).apply {
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(0xFFFBFBFB.toInt())
+            }
+            elevation = dp(1).toFloat()
             isClickable = false
-        }, LinearLayout.LayoutParams(dp(46), dp(46)))
+            isFocusable = false
+        }
+        val statusIcon = ImageView(this@MainActivity).apply {
+            setImageResource(iconRes)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            isClickable = false
+            isFocusable = false
+        }
+        iconBubble.addView(statusIcon, FrameLayout.LayoutParams(dp(39), dp(39), Gravity.CENTER))
+        addView(iconBubble, LinearLayout.LayoutParams(dp(50), dp(50)))
 
         addView(LinearLayout(this@MainActivity).apply {
             orientation = LinearLayout.VERTICAL
