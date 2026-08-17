@@ -130,7 +130,8 @@ object EnglishWordBank {
     )
 
     val numbers: List<EnglishWord> = (0..100).map { n ->
-        EnglishWord("數字", "🔢", numberEnglish(n), numberChinese(n))
+        // v0.7.6：數字分類直接顯示阿拉伯數字，不再所有題目都用同一個 🔢 圖示。
+        EnglishWord("數字", n.toString(), numberEnglish(n), numberChinese(n))
     }
 
     val all: List<EnglishWord> = everyday + numbers

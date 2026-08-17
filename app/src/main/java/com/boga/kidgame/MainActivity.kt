@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.graphics.*
 import android.graphics.drawable.GradientDrawable
 import android.media.AudioManager
+import android.media.MediaPlayer
 import android.media.ToneGenerator
 import android.os.Bundle
 import android.os.Handler
@@ -38,6 +39,8 @@ import kotlin.random.Random
 
 class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
+    // BUILD_MARKER_v0_8_0 — GitHub 上搜尋到這行才代表真的在編譯 0.8.0。
+
     private enum class GameType(val title: String, val emoji: String, val subtitle: String) {
         FIND("找一找", "🔍", "專注搜尋"),
         SAME("找一樣", "🧩", "觀察細節"),
@@ -45,8 +48,12 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         MAZE("迷宮", "🌀", "手眼協調"),
         MATCH("連連看", "🔗", "拖曳配對"),
         COUNT("數一數", "🔢", "數量概念"),
-        MATH("數學小高手", "➕", "基本加減法"),
-        MEMORY("記憶挑戰", "🧠", "短期記憶")
+        MATH("數學練習", "➕", "基本加減法"),
+        MEMORY("記憶挑戰", "🧠", "短期記憶"),
+        ODD("找不同", "👀", "觀察差異"),
+        PATTERN("規律接龍", "🔁", "邏輯規律"),
+        COMPARE("比一比", "⚖️", "大小比較"),
+        ORDER("排順序", "🔢", "數字順序")
     }
 
     private enum class MapFocus { DAILY, CHEST }
@@ -55,12 +62,13 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         object Home : Screen()
         data class Game(val game: GameType) : Screen()
         object Achievements : Screen()
+        object GameLibrary : Screen()
         data class TreasureMap(val focus: MapFocus) : Screen()
         object EnglishHome : Screen()
         data class EnglishWords(val category: String? = null) : Screen()
-        object EnglishQuiz : Screen()
-        object EnglishListening : Screen()
-        object EnglishPronunciation : Screen()
+        data class EnglishQuiz(val category: String? = null) : Screen()
+        data class EnglishListening(val category: String? = null) : Screen()
+        data class EnglishPronunciation(val category: String? = null) : Screen()
     }
 
     private lateinit var root: FrameLayout
@@ -85,6 +93,15 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private var pronunciationScoreView: TextView? = null
     private var pronunciationStatusView: TextView? = null
     private var pendingGameNavigation: GameType? = null
+    private var pendingEnglishNavigation: Screen? = null
+    private var pendingListeningWord: String? = null
+    private data class PendingTts(
+        val text: String,
+        val locale: Locale,
+        val utteranceId: String
+    )
+    private var pendingTts: PendingTts? = null
+    private var ttsInitRetryCount = 0
 
     private val bg = Color.rgb(255, 248, 234)
     private val brown = Color.rgb(86, 64, 48)
@@ -134,31 +151,167 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     }
 
     override fun onInit(status: Int) {
-        if (status == TextToSpeech.SUCCESS) {
-            val result = tts.setLanguage(Locale.TAIWAN)
-            ttsReady = result != TextToSpeech.LANG_MISSING_DATA &&
-                    result != TextToSpeech.LANG_NOT_SUPPORTED
-            tts.setSpeechRate(0.86f)
-            tts.setPitch(1.03f)
-            tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                override fun onStart(utteranceId: String?) = Unit
-                override fun onError(utteranceId: String?) = Unit
-                override fun onDone(utteranceId: String?) {
-                    when (utteranceId) {
-                        "pronunciation_demo" -> {
-                            handler.postDelayed({ beginPronunciationRecognition() }, 500L)
-                        }
-                        "home_game_title" -> {
-                            val game = pendingGameNavigation
-                            pendingGameNavigation = null
-                            if (game != null) {
-                                handler.post { navigateTo(Screen.Game(game)) }
-                            }
+        if (status != TextToSpeech.SUCCESS) {
+            ttsReady = false
+            if (ttsInitRetryCount < 1) {
+                ttsInitRetryCount++
+                handler.postDelayed({
+                    if (!isFinishing && !isDestroyed) {
+                        runCatching { tts.shutdown() }
+                        tts = TextToSpeech(this, this)
+                    }
+                }, 700L)
+            }
+            return
+        }
+
+        // 只要 TTS 引擎本身初始化成功就啟用。
+        // 語系是否可用改成每次朗讀時分別判斷，避免中文語音包缺少時連英文也一起靜音。
+        ttsReady = true
+        ttsInitRetryCount = 0
+        configureTtsLocale(Locale.US)
+
+        tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+            override fun onStart(utteranceId: String?) = Unit
+
+            override fun onError(utteranceId: String?) {
+                when (utteranceId) {
+                    "english_menu_title" -> handler.post {
+                        val destination = pendingEnglishNavigation
+                        pendingEnglishNavigation = null
+                        if (destination != null) navigateTo(destination)
+                    }
+                    "home_game_title" -> handler.post {
+                        val game = pendingGameNavigation
+                        pendingGameNavigation = null
+                        if (game != null) navigateTo(Screen.Game(game))
+                    }
+                }
+            }
+
+            override fun onDone(utteranceId: String?) {
+                when (utteranceId) {
+                    "pronunciation_demo" -> {
+                        handler.postDelayed({ beginPronunciationRecognition() }, 500L)
+                    }
+                    "home_game_title" -> {
+                        val game = pendingGameNavigation
+                        pendingGameNavigation = null
+                        if (game != null) handler.post { navigateTo(Screen.Game(game)) }
+                    }
+                    "english_menu_title" -> {
+                        val destination = pendingEnglishNavigation
+                        pendingEnglishNavigation = null
+                        if (destination != null) handler.post { navigateTo(destination) }
+                    }
+                    "english_listening_prompt" -> {
+                        val word = pendingListeningWord
+                        pendingListeningWord = null
+                        if (!word.isNullOrBlank()) {
+                            handler.postDelayed({ speakEnglishUS(word) }, 250L)
                         }
                     }
                 }
-            })
+            }
+        })
+
+        val queued = pendingTts
+        if (queued != null) {
+            pendingTts = null
+            handler.post {
+                speakWithLocale(
+                    queued.text,
+                    queued.locale,
+                    queued.utteranceId,
+                    queueIfNotReady = false
+                )
+            }
         }
+    }
+
+    private fun supportedLocale(preferred: Locale): Locale? {
+        if (!ttsReady) return null
+        val candidates = if (preferred.language == Locale.CHINESE.language) {
+            listOf(Locale.TAIWAN, Locale.TRADITIONAL_CHINESE, Locale.CHINESE, Locale.CHINA)
+        } else {
+            listOf(Locale.US, Locale.ENGLISH)
+        }.distinctBy { it.toLanguageTag() }
+
+        return candidates.firstOrNull { candidate ->
+            runCatching {
+                tts.isLanguageAvailable(candidate) >= TextToSpeech.LANG_AVAILABLE
+            }.getOrDefault(false)
+        }
+    }
+
+    private fun configureTtsLocale(preferred: Locale): Boolean {
+        if (!ttsReady) return false
+        val locale = supportedLocale(preferred) ?: return false
+        val result = runCatching { tts.setLanguage(locale) }
+            .getOrDefault(TextToSpeech.LANG_NOT_SUPPORTED)
+        if (result == TextToSpeech.LANG_MISSING_DATA ||
+            result == TextToSpeech.LANG_NOT_SUPPORTED
+        ) return false
+
+        val isEnglish = locale.language == Locale.ENGLISH.language
+
+        // v0.7.6：優先「真人感」而不是把音高硬拉成卡通聲。
+        // Android TTS 的 child / female 名稱並沒有跨廠牌標準，先前只靠名稱挑 Voice
+        // 可能反而選到低品質 compact voice。這版改成：
+        // 1. 同語言、同國家優先；2. Voice quality 越高越優先；
+        // 3. neural / natural / premium / enhanced / network 類型加權；
+        // 4. compact / legacy 類型降權。
+        val matchingVoices = tts.voices
+            ?.filter { it.locale.language.equals(locale.language, ignoreCase = true) }
+            .orEmpty()
+
+        val preferredVoice = matchingVoices.maxByOrNull { voice ->
+            val name = voice.name.lowercase(Locale.ROOT)
+            var score = voice.quality * 10
+            if (locale.country.isNotBlank() &&
+                voice.locale.country.equals(locale.country, ignoreCase = true)) score += 1200
+            if (voice.isNetworkConnectionRequired) score += 240
+            if ("neural" in name || "natural" in name || "wavenet" in name ||
+                "studio" in name || "premium" in name || "enhanced" in name ||
+                "network" in name) score += 900
+            if ("female" in name || "woman" in name || "girl" in name) score += 80
+            if ("compact" in name || "legacy" in name || "low" in name) score -= 900
+            score
+        }
+        if (preferredVoice != null) {
+            runCatching { tts.voice = preferredVoice }
+        }
+
+        // 真人感的關鍵是回到接近自然音高，只稍微放慢教學速度。
+        // 過高 pitch 會更像電子合成音，所以取消 v0.7.5 的 1.14 / 1.17。
+        tts.setSpeechRate(if (isEnglish) 0.88f else 0.90f)
+        tts.setPitch(if (isEnglish) 1.03f else 1.04f)
+        return true
+    }
+
+    private fun speechParams(): Bundle = Bundle().apply {
+        putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f)
+    }
+
+    private fun speakWithLocale(
+        value: String,
+        locale: Locale,
+        utteranceId: String,
+        queueIfNotReady: Boolean = true
+    ): Boolean {
+        if (value.isBlank()) return false
+        if (!ttsReady) {
+            if (queueIfNotReady) pendingTts = PendingTts(value, locale, utteranceId)
+            return false
+        }
+        if (!configureTtsLocale(locale)) return false
+        tts.stop()
+        return tts.speak(
+            value,
+            TextToSpeech.QUEUE_FLUSH,
+            speechParams(),
+            utteranceId
+        ) == TextToSpeech.SUCCESS
     }
 
     private fun dp(v: Int): Int =
@@ -255,20 +408,22 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         handler.removeCallbacksAndMessages(null)
         if (::tts.isInitialized) tts.stop()
         speechRecognizer?.cancel()
-        if (screen != Screen.EnglishPronunciation) pronunciationTarget = ""
+        if (screen !is Screen.EnglishPronunciation) pronunciationTarget = ""
         pronunciationResultView = null
         pronunciationScoreView = null
         pronunciationStatusView = null
+
         when (screen) {
             Screen.Home -> showHome()
             is Screen.Game -> showGame(screen.game)
+            Screen.GameLibrary -> showGameLibrary()
             Screen.Achievements -> showAchievements()
             is Screen.TreasureMap -> showTreasureMap(screen.focus)
             Screen.EnglishHome -> showEnglishHome()
             is Screen.EnglishWords -> showEnglishWords(screen.category)
-            Screen.EnglishQuiz -> showEnglishQuiz()
-            Screen.EnglishListening -> showEnglishListening()
-            Screen.EnglishPronunciation -> showEnglishPronunciation()
+            is Screen.EnglishQuiz -> showEnglishQuiz(screen.category)
+            is Screen.EnglishListening -> showEnglishListening(screen.category)
+            is Screen.EnglishPronunciation -> showEnglishPronunciation(screen.category)
         }
     }
 
@@ -347,8 +502,10 @@ private fun showHome() {
         setImageResource(R.drawable.home_pets)
         scaleType = ImageView.ScaleType.CENTER_CROP
         adjustViewBounds = true
-        background = rounded(0xFFFFF8E9.toInt(), 18)
-        clipToOutline = true
+        // v0.6.9：home_pets 已清掉圖片本身烤進去的上一排卡片殘影。
+        // 這裡不再加第二層 background / outline，避免出現紅框那條縮小版方格。
+        background = null
+        clipToOutline = false
         contentDescription = "偶貴老師、黑糖老師、熊熊老師"
     }
     content.addView(pets, LinearLayout.LayoutParams(
@@ -356,7 +513,7 @@ private fun showHome() {
     ))
     content.addSpace(3)
 
-    val gameValues = GameType.values()
+    val gameValues = GameType.values().take(8)
     for (row in 0 until 4) {
         val line = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -371,6 +528,34 @@ private fun showHome() {
         content.addView(line)
         if (row < 3) content.addSpace(3)
     }
+
+    content.addSpace(4)
+
+    val gameLibrary = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        minimumHeight = dp(48)
+        setPadding(dp(14), dp(4), dp(14), dp(4))
+        background = rounded(0xFFE8F7E2.toInt(), 21)
+        elevation = dp(2).toFloat()
+        isClickable = true
+        isFocusable = true
+        addView(text("🎮", 23f),
+            LinearLayout.LayoutParams(dp(50), ViewGroup.LayoutParams.WRAP_CONTENT))
+        addView(text("遊戲庫　12款", 17f, brown, true,
+            Gravity.START or Gravity.CENTER_VERTICAL).apply {
+            maxLines = 1
+            TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
+                this, 14, 18, 1, TypedValue.COMPLEX_UNIT_SP
+            )
+        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        addView(text("›", 27f, 0xFF4C9A45.toInt(), true),
+            LinearLayout.LayoutParams(dp(34), ViewGroup.LayoutParams.WRAP_CONTENT))
+        setOnClickListener { navigateTo(Screen.GameLibrary) }
+    }
+    content.addView(gameLibrary, LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+    ))
 
     content.addSpace(4)
 
@@ -476,7 +661,7 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
             gravity = Gravity.CENTER_VERTICAL
             background = rounded(color, 23)
             // 不再加 icon 容器 elevation，避免部分 Samsung 裝置出現「圓形後面又有一個方格」的陰影/殘影。
-            elevation = dp(1).toFloat()
+            elevation = 0f
             minimumHeight = dp(74)
             isClickable = true
             isFocusable = true
@@ -573,6 +758,10 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
         GameType.COUNT -> 0xFFDDF5F3.toInt()
         GameType.MATH -> 0xFFE2EDFF.toInt()
         GameType.MEMORY -> 0xFFFFE9D4.toInt()
+        GameType.ODD -> 0xFFFFE6F0.toInt()
+        GameType.PATTERN -> 0xFFE9F6FF.toInt()
+        GameType.COMPARE -> 0xFFFFF2CC.toInt()
+        GameType.ORDER -> 0xFFE8F4DE.toInt()
     }
 
     private fun gameSubtitleColor(game: GameType): Int = when (game) {
@@ -584,6 +773,10 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
         GameType.COUNT -> 0xFF078E94.toInt()
         GameType.MATH -> 0xFF296DD8.toInt()
         GameType.MEMORY -> 0xFFE45B13.toInt()
+        GameType.ODD -> 0xFFD94B79.toInt()
+        GameType.PATTERN -> 0xFF2785C7.toInt()
+        GameType.COMPARE -> 0xFFC17A00.toInt()
+        GameType.ORDER -> 0xFF4F8B3A.toInt()
     }
 
     private fun makeGameTile(game: GameType): View {
@@ -593,7 +786,7 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
             background = rounded(gameCardColor(game), 22, Color.WHITE, 2)
             elevation = dp(2).toFloat()
             minimumHeight = dp(68)
-            setPadding(dp(9), dp(6), dp(11), dp(6))
+            setPadding(dp(7), dp(6), dp(7), dp(6))
             isClickable = true
             isFocusable = true
             contentDescription = game.title
@@ -606,49 +799,58 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
             isFocusable = false
             contentDescription = game.title
         }
-        tile.addView(icon, LinearLayout.LayoutParams(dp(52), dp(52)))
+        // 首頁雙欄寬度有限：圖示縮成 48dp，讓五個字的「數學小高手」有完整空間。
+        tile.addView(icon, LinearLayout.LayoutParams(dp(48), dp(48)))
 
         val title = text(
             game.title,
-            18f,
+            if (game == GameType.MATH) 14f else 18f,
             0xFF4B2C18.toInt(),
             true,
             Gravity.START or Gravity.CENTER_VERTICAL
         ).apply {
             maxLines = 1
-            TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
-                this, 14, 19, 1, TypedValue.COMPLEX_UNIT_SP
-            )
+            includeFontPadding = false
+            ellipsize = null
+            setPadding(0, 0, 0, 0)
+
+            if (game == GameType.MATH) {
+                // 固定小一號字級並略縮字寬，保證「數學小高手」五字完整顯示。
+                textSize = 14f
+                letterSpacing = -0.025f
+                setTextScaleX(0.94f)
+            } else {
+                TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
+                    this, 13, 19, 1, TypedValue.COMPLEX_UNIT_SP
+                )
+            }
             isClickable = false
             isFocusable = false
         }
         tile.addView(
             title,
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f).apply {
-                marginStart = dp(10)
+                marginStart = dp(6)
             }
         )
 
         tile.setOnClickListener {
             tile.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
 
-            // 先完整朗讀卡片名稱，再進遊戲，避免切頁 tts.stop() 吃掉卡片語音。
-            if (ttsReady) {
-                pendingGameNavigation = game
-                tts.stop()
-                tts.language = Locale.TAIWAN
-                tts.setSpeechRate(0.86f)
-                tts.speak(game.title, TextToSpeech.QUEUE_FLUSH, null, "home_game_title")
+            // 先完整朗讀卡片名稱，再進遊戲；TTS 未就緒時也會先排隊，避免直接變成靜音。
+            pendingGameNavigation = game
+            val started = speakWithLocale(
+                game.title,
+                Locale.TAIWAN,
+                "home_game_title"
+            )
 
-                handler.postDelayed({
-                    if (pendingGameNavigation == game) {
-                        pendingGameNavigation = null
-                        navigateTo(Screen.Game(game))
-                    }
-                }, 1500L)
-            } else {
-                navigateTo(Screen.Game(game))
-            }
+            handler.postDelayed({
+                if (pendingGameNavigation == game) {
+                    pendingGameNavigation = null
+                    navigateTo(Screen.Game(game))
+                }
+            }, if (started) 2600L else 1200L)
         }
 
         return tile
@@ -690,6 +892,10 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
                 GameType.COUNT -> drawLabel(canvas, "123", cx, cy, s, 0xFF07969B.toInt(), 0.34f)
                 GameType.MATH -> drawLabel(canvas, "1+2", cx, cy, s, 0xFF2E6FD8.toInt(), 0.29f)
                 GameType.MEMORY -> drawMemory(canvas, cx, cy, s)
+                GameType.ODD -> drawOdd(canvas, cx, cy, s)
+                GameType.PATTERN -> drawPattern(canvas, cx, cy, s)
+                GameType.COMPARE -> drawLabel(canvas, ">", cx, cy, s, 0xFFC17A00.toInt(), 0.48f)
+                GameType.ORDER -> drawLabel(canvas, "1·2·3", cx, cy, s, 0xFF4F8B3A.toInt(), 0.22f)
             }
         }
 
@@ -759,6 +965,24 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
             c.drawCircle(cx - s * 0.12f, cy + s * 0.03f, s * 0.13f, p)
             c.drawCircle(cx, cy - s * 0.08f, s * 0.15f, p)
             c.drawCircle(cx + s * 0.13f, cy + s * 0.04f, s * 0.13f, p)
+        }
+
+        private fun drawOdd(c: Canvas, cx: Float, cy: Float, s: Float) {
+            p.style = Paint.Style.FILL
+            p.color = 0xFF4D8FE8.toInt()
+            c.drawCircle(cx - s * 0.16f, cy, s * 0.10f, p)
+            c.drawCircle(cx, cy, s * 0.10f, p)
+            p.color = 0xFFF25276.toInt()
+            c.drawCircle(cx + s * 0.16f, cy, s * 0.10f, p)
+        }
+
+        private fun drawPattern(c: Canvas, cx: Float, cy: Float, s: Float) {
+            val xs = floatArrayOf(-0.24f, -0.08f, 0.08f, 0.24f)
+            xs.forEachIndexed { index, offset ->
+                p.style = Paint.Style.FILL
+                p.color = if (index % 2 == 0) 0xFFF25276.toInt() else 0xFF4D8FE8.toInt()
+                c.drawCircle(cx + s * offset, cy, s * 0.075f, p)
+            }
         }
 
         private fun drawLabel(
@@ -867,6 +1091,10 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
             GameType.COUNT -> buildCount(gameArea, q, feedback)
             GameType.MATH -> buildMath(gameArea, q, feedback)
             GameType.MEMORY -> buildMemory(gameArea, q, feedback)
+            GameType.ODD -> buildOdd(gameArea, q, feedback)
+            GameType.PATTERN -> buildPattern(gameArea, q, feedback)
+            GameType.COMPARE -> buildCompare(gameArea, q, feedback)
+            GameType.ORDER -> buildOrder(gameArea, q, feedback)
         }
     }
 
@@ -880,9 +1108,17 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
     }
 
     private fun speakQuestion(autoRead: Boolean = false) {
-        if (!ttsReady || currentQuestion.isBlank()) return
-        tts.language = Locale.TAIWAN
-        tts.setSpeechRate(0.86f)
+        if (currentQuestion.isBlank()) return
+
+        if (!ttsReady) {
+            pendingTts = PendingTts(
+                currentQuestion,
+                Locale.TAIWAN,
+                if (autoRead) "question_auto" else "question_replay"
+            )
+            return
+        }
+        if (!configureTtsLocale(Locale.TAIWAN)) return
 
         if (!autoRead) {
             // 使用者按「重播題目」時要立即重播。
@@ -892,7 +1128,7 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
         tts.speak(
             currentQuestion,
             if (autoRead) TextToSpeech.QUEUE_ADD else TextToSpeech.QUEUE_FLUSH,
-            null,
+            speechParams(),
             if (autoRead) "question_auto" else "question_replay"
         )
     }
@@ -909,11 +1145,31 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
         handler.postDelayed({ view.visibility = View.INVISIBLE }, 1100L)
     }
 
+    private fun playCorrectSound() {
+        runCatching {
+            val player = MediaPlayer.create(this, R.raw.correct_answer_source)
+            if (player == null) {
+                tone.startTone(ToneGenerator.TONE_PROP_ACK, 220)
+                return
+            }
+            player.setVolume(1.0f, 1.0f)
+            player.setOnCompletionListener { mp -> mp.release() }
+            player.setOnErrorListener { mp, _, _ ->
+                mp.release()
+                true
+            }
+            player.start()
+        }.onFailure {
+            // 極少數裝置若 MediaPlayer 建立失敗，仍保留系統提示音作 fallback。
+            tone.startTone(ToneGenerator.TONE_PROP_ACK, 220)
+        }
+    }
+
     private fun success(feedbackView: TextView, message: String = "答對了！ ⭐ +1") {
         stars++
         recordCompletedChallenge()
         saveProgress()
-        tone.startTone(ToneGenerator.TONE_PROP_ACK, 120)
+        playCorrectSound()
         feedbackView.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
         feedback(feedbackView, message, true)
     }
@@ -1376,6 +1632,190 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
     }
 
 
+
+    // ------------------------- ODD ONE OUT -------------------------
+
+    private fun buildOdd(area: FrameLayout, q: TextView, fb: TextView) {
+        setQuestion(q, "找出不一樣的圖案。")
+
+        val groups = listOf(
+            "🍎" to "🍊",
+            "🐶" to "🐱",
+            "⭐" to "❤️",
+            "🔵" to "🟢",
+            "▲" to "●"
+        )
+        val pair = groups.random()
+        val oddIndex = Random.nextInt(6)
+
+        val grid = GridLayout(this).apply {
+            columnCount = 3
+            rowCount = 2
+            setPadding(dp(10), dp(18), dp(10), dp(18))
+        }
+        area.addView(grid, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        ))
+
+        repeat(6) { index ->
+            val symbol = if (index == oddIndex) pair.second else pair.first
+            val b = optionButton(symbol, Color.WHITE)
+            b.setOnClickListener {
+                if (index == oddIndex) {
+                    success(fb, "找到了！ ⭐ +1")
+                    handler.postDelayed({ showGame(GameType.ODD) }, 750)
+                } else {
+                    wrong(fb, "這個和大部分一樣，再看看～")
+                }
+            }
+            grid.addView(b, GridLayout.LayoutParams().apply {
+                width = 0
+                height = 0
+                columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
+                rowSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
+                setMargins(dp(7), dp(7), dp(7), dp(7))
+            })
+        }
+    }
+
+    // ------------------------- PATTERN -------------------------
+
+    private fun buildPattern(area: FrameLayout, q: TextView, fb: TextView) {
+        val patterns = listOf(
+            Pair(listOf("🔴", "🔵", "🔴", "🔵"), "🔴"),
+            Pair(listOf("⭐", "❤️", "⭐", "❤️"), "⭐"),
+            Pair(listOf("🟢", "🟢", "🟡", "🟢", "🟢", "🟡"), "🟢"),
+            Pair(listOf("▲", "●", "▲", "●"), "▲")
+        )
+        val picked = patterns.random()
+        val sequence = picked.first
+        val answer = picked.second
+        setQuestion(q, "看看規律，下一個應該是什麼？")
+
+        val wrap = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(dp(10), dp(12), dp(10), dp(12))
+        }
+        area.addView(wrap, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        ))
+
+        val line = text(sequence.joinToString("  ") + "  ?", 32f, brown, true)
+        TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
+            line, 22, 36, 1, TypedValue.COMPLEX_UNIT_SP
+        )
+        wrap.addView(line, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(130)
+        ))
+
+        val pool = (sequence.distinct() + listOf("🟡", "🟢", "🔵", "❤️", "●"))
+            .distinct()
+            .filter { it != answer }
+            .shuffled()
+            .take(2)
+            .plus(answer)
+            .shuffled()
+
+        pool.forEach { symbol ->
+            val b = optionButton(symbol, 0xFFF7FBFF.toInt())
+            b.setOnClickListener {
+                if (symbol == answer) {
+                    success(fb, "規律答對了！ ⭐ +1")
+                    handler.postDelayed({ showGame(GameType.PATTERN) }, 750)
+                } else wrong(fb)
+            }
+            wrap.addView(b, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+            ).apply { setMargins(0, dp(6), 0, dp(6)) })
+        }
+    }
+
+    // ------------------------- COMPARE -------------------------
+
+    private fun buildCompare(area: FrameLayout, q: TextView, fb: TextView) {
+        var left = Random.nextInt(1, 21)
+        var right = Random.nextInt(1, 21)
+        while (right == left) right = Random.nextInt(1, 21)
+
+        val askBigger = Random.nextBoolean()
+        val answer = if (askBigger) max(left, right) else min(left, right)
+        setQuestion(q, if (askBigger) "哪一個數字比較大？" else "哪一個數字比較小？")
+
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(dp(10), dp(28), dp(10), dp(28))
+        }
+        area.addView(row, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        ))
+
+        listOf(left, right).forEachIndexed { index, number ->
+            val b = optionButton(
+                number.toString(),
+                if (index == 0) 0xFFE4EFFF.toInt() else 0xFFFFE9D7.toInt()
+            )
+            b.setOnClickListener {
+                if (number == answer) {
+                    success(fb, "比對正確！ ⭐ +1")
+                    handler.postDelayed({ showGame(GameType.COMPARE) }, 700)
+                } else wrong(fb)
+            }
+            row.addView(b, LinearLayout.LayoutParams(0, dp(190), 1f).apply {
+                setMargins(dp(7), dp(7), dp(7), dp(7))
+            })
+        }
+    }
+
+    // ------------------------- ORDER -------------------------
+
+    private fun buildOrder(area: FrameLayout, q: TextView, fb: TextView) {
+        val start = Random.nextInt(1, 14)
+        val answer = start + 3
+        setQuestion(q, "照數字順序，下一個是多少？")
+
+        val wrap = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(dp(10), dp(18), dp(10), dp(18))
+        }
+        area.addView(wrap, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        ))
+
+        val sequence = text("$start　${start + 1}　${start + 2}　?", 38f, brown, true)
+        TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
+            sequence, 28, 42, 1, TypedValue.COMPLEX_UNIT_SP
+        )
+        wrap.addView(sequence, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(120)
+        ))
+
+        val options = linkedSetOf(answer)
+        while (options.size < 3) {
+            val candidate = (answer + Random.nextInt(-2, 3)).coerceAtLeast(0)
+            if (candidate != answer) options += candidate
+        }
+        options.shuffled().forEach { number ->
+            val b = optionButton(number.toString(), 0xFFE8F4DE.toInt())
+            b.setOnClickListener {
+                if (number == answer) {
+                    success(fb, "順序答對了！ ⭐ +1")
+                    handler.postDelayed({ showGame(GameType.ORDER) }, 700)
+                } else wrong(fb)
+            }
+            wrap.addView(b, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+            ).apply { setMargins(0, dp(6), 0, dp(6)) })
+        }
+    }
+
+
     // ------------------------- ENGLISH MODULE -------------------------
 
     private fun englishKnown(): MutableSet<String> =
@@ -1421,9 +1861,9 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
 
         val cards = listOf(
             Triple("📖", "單字學習", Screen.EnglishWords(null)),
-            Triple("🎧", "聽力挑戰", Screen.EnglishListening),
-            Triple("✅", "英文測驗", Screen.EnglishQuiz),
-            Triple("🎤", "發音練習", Screen.EnglishPronunciation)
+            Triple("🎧", "聽力挑戰", Screen.EnglishListening(null)),
+            Triple("✅", "英文測驗", Screen.EnglishQuiz(null)),
+            Triple("🎤", "發音練習", Screen.EnglishPronunciation(null))
         )
         for (row in 0 until 2) {
             val line = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
@@ -1439,7 +1879,9 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
                     elevation = dp(2).toFloat()
                     addView(text(item.first, 38f), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.2f))
                     addView(text(item.second, 20f, brown, true), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 0.8f))
-                    setOnClickListener { navigateTo(item.third) }
+                    setOnClickListener {
+                        speakEnglishMenuThenNavigate(item.second, item.third)
+                    }
                 }
                 line.addView(card, LinearLayout.LayoutParams(0, dp(132), 1f).apply {
                     if (col == 0) marginEnd = dp(5) else marginStart = dp(5)
@@ -1501,64 +1943,159 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
         }
         content.addView(intro, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)))
         content.addSpace(10)
+        handler.postDelayed({ speakChinese("選一個主題開始學習") }, 500L)
 
         EnglishWordBank.categories.forEach { (categoryName, fallbackIcon) ->
             val categoryWords = EnglishWordBank.wordsIn(categoryName)
             val heroEmoji = categoryWords.firstOrNull()?.emoji ?: fallbackIcon
-            val sampleEmoji = categoryWords.take(4).joinToString("   ") { it.emoji }
+
+            // v0.7.8：右側空間有限，只展示 3 個範例，避免第 4 個被箭頭/邊界切掉。
+            val sampleEmoji = categoryWords.take(3).joinToString("   ") { it.emoji }
             val description = EnglishWordBank.categoryDescription(categoryName)
 
             val card = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(12), dp(12), dp(12), dp(12))
+                setPadding(dp(14), dp(14), dp(12), dp(14))
                 background = rounded(Color.WHITE, 26)
                 elevation = dp(2).toFloat()
                 isClickable = true
                 isFocusable = true
+
+                // 不裁切任何子 View。實際高度由內容決定，不再用固定 170dp。
+                clipChildren = false
+                clipToPadding = false
+                minimumHeight = dp(176)
             }
 
-            val iconBox = text(heroEmoji, 52f, Color.BLACK, false).apply {
+            val iconBox = text(heroEmoji, 50f, Color.BLACK, false).apply {
                 background = rounded(0xFFFFE3EC.toInt(), 23)
+                includeFontPadding = true
+                setPadding(dp(8), dp(10), dp(8), dp(10))
+                isClickable = false
+                isFocusable = false
             }
-            card.addView(iconBox, LinearLayout.LayoutParams(dp(104), dp(104)).apply {
-                marginEnd = dp(14)
-            })
+            card.addView(
+                iconBox,
+                LinearLayout.LayoutParams(dp(106), dp(106)).apply {
+                    marginEnd = dp(14)
+                }
+            )
 
             val words = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER_VERTICAL
+                clipChildren = false
+                clipToPadding = false
+                setPadding(0, dp(3), 0, dp(3))
             }
-            val title = text(categoryName, 25f, 0xFF19191F.toInt(), true, Gravity.START or Gravity.CENTER_VERTICAL).apply {
-                maxLines = 1
-                TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
-                    this, 20, 27, 1, TypedValue.COMPLEX_UNIT_SP
-                )
-            }
-            val desc = text(description, 16f, 0xFF303038.toInt(), false, Gravity.START or Gravity.CENTER_VERTICAL).apply {
-                maxLines = 2
-                TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
-                    this, 14, 17, 1, TypedValue.COMPLEX_UNIT_SP
-                )
-            }
-            val samples = text(sampleEmoji, 25f, 0xFF19191F.toInt(), false, Gravity.START or Gravity.CENTER_VERTICAL).apply {
-                maxLines = 1
-            }
-            words.addView(title, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(38)))
-            words.addView(desc, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)))
-            words.addView(samples, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(40)))
-            card.addView(words, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
 
-            val arrow = text("›", 42f, 0xFF17171B.toInt(), true)
-            card.addView(arrow, LinearLayout.LayoutParams(dp(40), dp(70)))
+            val title = text(
+                categoryName,
+                24f,
+                0xFF19191F.toInt(),
+                true,
+                Gravity.START or Gravity.CENTER_VERTICAL
+            ).apply {
+                maxLines = 1
+                includeFontPadding = true
+                setPadding(dp(2), dp(2), dp(2), dp(4))
+                TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
+                    this, 19, 25, 1, TypedValue.COMPLEX_UNIT_SP
+                )
+            }
+
+            val desc = text(
+                description,
+                15f,
+                0xFF303038.toInt(),
+                false,
+                Gravity.START
+            ).apply {
+                // 關鍵修正：不再給副標題固定 58dp，高度依 1~3 行文字自行撐開。
+                maxLines = 3
+                minLines = 1
+                includeFontPadding = true
+                setPadding(dp(2), dp(5), dp(2), dp(6))
+                setLineSpacing(dp(3).toFloat(), 1.05f)
+                TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
+                    this, 12, 16, 1, TypedValue.COMPLEX_UNIT_SP
+                )
+            }
+
+            val samples = text(
+                sampleEmoji,
+                24f,
+                0xFF19191F.toInt(),
+                false,
+                Gravity.START or Gravity.CENTER_VERTICAL
+            ).apply {
+                maxLines = 1
+                includeFontPadding = true
+                // Samsung Emoji 字型的下緣需要額外空間，避免圖案底部被切。
+                setPadding(dp(2), dp(6), dp(2), dp(9))
+                minHeight = dp(48)
+            }
+
+            // 三個 View 全部 WRAP_CONTENT；沒有任何互相覆蓋的固定圖層。
+            words.addView(
+                title,
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            )
+            words.addView(
+                desc,
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            )
+            words.addView(
+                samples,
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            )
+
+            card.addView(
+                words,
+                LinearLayout.LayoutParams(
+                    0,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    1f
+                )
+            )
+
+            val arrow = text("›", 40f, 0xFF17171B.toInt(), true).apply {
+                isClickable = false
+                isFocusable = false
+            }
+            card.addView(
+                arrow,
+                LinearLayout.LayoutParams(dp(34), dp(72)).apply {
+                    marginStart = dp(4)
+                }
+            )
 
             card.setOnClickListener {
-                // 分類卡只負責進入分類；進入後 0.5 秒自動朗讀第一個英文單字。
-                navigateTo(Screen.EnglishWords(categoryName))
+                speakEnglishMenuThenNavigate(
+                    categoryName,
+                    Screen.EnglishWords(categoryName)
+                )
             }
 
-            content.addView(card, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(148)))
-            content.addSpace(10)
+            // 卡片本身也使用 WRAP_CONTENT；文字變兩行/三行時整張卡會一起變高。
+            content.addView(
+                card,
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            )
+            content.addSpace(12)
         }
     }
 
@@ -1725,7 +2262,7 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
                 saveEnglishKnown(set)
                 stars++
                 saveProgress()
-                tone.startTone(ToneGenerator.TONE_PROP_ACK, 120)
+                playCorrectSound()
                 knownButton.text = "✅ 已會了　⭐ +1"
             } else {
                 tone.startTone(ToneGenerator.TONE_PROP_BEEP, 70)
@@ -1736,7 +2273,198 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
         handler.postDelayed({ speakEnglishUS(currentWord().english) }, 500L)
     }
 
-    private fun showEnglishQuiz() {
+    /**
+     * 聽力挑戰 / 英文測驗 / 發音練習的真正「子分頁」。
+     * 先選分類，再進入題目，避免四張英文卡只剩一個平面頁面。
+     */
+    private fun showEnglishGameCategoryList(
+        pageTitle: String,
+        instruction: String,
+        destination: (String) -> Screen
+    ) {
+        root.removeAllViews()
+        root.setBackgroundColor(0xFFFFFAF0.toInt())
+
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+            isVerticalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+        }
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(9), dp(12), dp(28))
+        }
+        scroll.addView(content, ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+        root.addView(scroll)
+
+        content.addView(makePageHeader(pageTitle))
+        content.addSpace(8)
+
+        val intro = text(
+            instruction, 18f, brown, true,
+            Gravity.START or Gravity.CENTER_VERTICAL
+        ).apply {
+            background = rounded(0xFFFFF1C9.toInt(), 19)
+            minHeight = dp(52)
+        }
+        content.addView(intro, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+        content.addSpace(10)
+        handler.postDelayed({ speakChinese(instruction) }, 500L)
+
+        EnglishWordBank.categories.forEach { (categoryName, fallbackIcon) ->
+            val categoryWords = EnglishWordBank.wordsIn(categoryName)
+            val heroEmoji = categoryWords.firstOrNull()?.emoji ?: fallbackIcon
+            val sampleEmoji = categoryWords.take(3).joinToString("   ") { it.emoji }
+            val description = EnglishWordBank.categoryDescription(categoryName)
+
+            val card = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(14), dp(14), dp(12), dp(14))
+                background = rounded(Color.WHITE, 24)
+                elevation = dp(2).toFloat()
+                isClickable = true
+                isFocusable = true
+                contentDescription = categoryName
+                clipChildren = false
+                clipToPadding = false
+                minimumHeight = dp(170)
+            }
+
+            val iconBox = text(heroEmoji, 48f).apply {
+                background = rounded(0xFFFFE3EC.toInt(), 22)
+                includeFontPadding = true
+                setPadding(dp(8), dp(10), dp(8), dp(10))
+                isClickable = false
+                isFocusable = false
+            }
+            card.addView(
+                iconBox,
+                LinearLayout.LayoutParams(dp(102), dp(102)).apply {
+                    marginEnd = dp(14)
+                }
+            )
+
+            val words = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER_VERTICAL
+                clipChildren = false
+                clipToPadding = false
+            }
+
+            words.addView(
+                text(
+                    categoryName,
+                    23f,
+                    0xFF19191F.toInt(),
+                    true,
+                    Gravity.START or Gravity.CENTER_VERTICAL
+                ).apply {
+                    maxLines = 1
+                    includeFontPadding = true
+                    setPadding(dp(2), dp(2), dp(2), dp(4))
+                    isClickable = false
+                    isFocusable = false
+                },
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            )
+
+            words.addView(
+                text(
+                    description,
+                    15f,
+                    0xFF303038.toInt(),
+                    false,
+                    Gravity.START
+                ).apply {
+                    maxLines = 3
+                    includeFontPadding = true
+                    setPadding(dp(2), dp(5), dp(2), dp(6))
+                    setLineSpacing(dp(3).toFloat(), 1.05f)
+                    TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
+                        this, 12, 16, 1, TypedValue.COMPLEX_UNIT_SP
+                    )
+                    isClickable = false
+                    isFocusable = false
+                },
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            )
+
+            words.addView(
+                text(
+                    sampleEmoji,
+                    24f,
+                    0xFF19191F.toInt(),
+                    false,
+                    Gravity.START or Gravity.CENTER_VERTICAL
+                ).apply {
+                    maxLines = 1
+                    includeFontPadding = true
+                    setPadding(dp(2), dp(6), dp(2), dp(9))
+                    minHeight = dp(48)
+                    isClickable = false
+                    isFocusable = false
+                },
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            )
+
+            card.addView(
+                words,
+                LinearLayout.LayoutParams(
+                    0,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    1f
+                )
+            )
+
+            card.addView(
+                text("›", 38f, 0xFF17171B.toInt(), true).apply {
+                    isClickable = false
+                    isFocusable = false
+                },
+                LinearLayout.LayoutParams(dp(34), dp(70)).apply {
+                    marginStart = dp(4)
+                }
+            )
+
+            card.setOnClickListener {
+                speakEnglishMenuThenNavigate(categoryName, destination(categoryName))
+            }
+
+            content.addView(
+                card,
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            )
+            content.addSpace(11)
+        }
+    }
+
+    private fun showEnglishQuiz(category: String?) {
+        if (category == null) {
+            showEnglishGameCategoryList(
+                "英文測驗",
+                "選一個主題開始測驗"
+            ) { selected -> Screen.EnglishQuiz(selected) }
+            return
+        }
         root.removeAllViews()
         val page = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -1744,8 +2472,9 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
             setBackgroundColor(0xFFF7FBFF.toInt())
         }
         root.addView(page)
-        page.addView(makePageHeader("英文測驗"))
+        page.addView(makePageHeader("英文測驗・$category"))
         page.addSpace(8)
+        val quizPool = EnglishWordBank.wordsIn(category).ifEmpty { EnglishWordBank.all }
 
         val q = text("", 24f, brown, true).apply {
             background = rounded(Color.WHITE, 22)
@@ -1762,9 +2491,11 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
 
         fun nextQuestion() {
             answerWrap.removeAllViews()
-            val target = EnglishWordBank.all.random()
+            val target = quizPool.random()
             val options = linkedSetOf(target)
-            while (options.size < 3) options.add(EnglishWordBank.all.random())
+            while (options.size < 3) {
+                options.add((quizPool + EnglishWordBank.all).random())
+            }
             q.text = "${target.emoji} ${target.chinese} 的英文怎麼說？"
             currentQuestion = q.text.toString()
             handler.postDelayed({ speakChinese(currentQuestion) }, 500L)
@@ -1777,6 +2508,7 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
                             stars++
                             recordCompletedChallenge()
                             saveProgress()
+                            playCorrectSound()
                             feedback(fb, "答對了！ ⭐ +1", true)
                             handler.postDelayed({ nextQuestion() }, 850L)
                         } else wrong(fb, "再想想看～")
@@ -1790,7 +2522,15 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
         nextQuestion()
     }
 
-    private fun showEnglishListening() {
+    private fun showEnglishListening(category: String?) {
+        if (category == null) {
+            showEnglishGameCategoryList(
+                "聽力挑戰",
+                "選一個主題開始聽力挑戰"
+            ) { selected -> Screen.EnglishListening(selected) }
+            return
+        }
+
         root.removeAllViews()
         val page = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -1798,8 +2538,9 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
             setBackgroundColor(0xFFF7FBFF.toInt())
         }
         root.addView(page)
-        page.addView(makePageHeader("聽力挑戰"))
+        page.addView(makePageHeader("聽力挑戰・$category"))
         page.addSpace(8)
+        val listeningPool = EnglishWordBank.wordsIn(category).ifEmpty { EnglishWordBank.all }
         val prompt = text("🔊 聽單字，選出正確圖片", 22f, brown, true).apply {
             background = rounded(Color.WHITE, 22)
         }
@@ -1812,12 +2553,15 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
         page.addView(grid, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         val fb = text("", 17f, brown, true).apply { visibility = View.INVISIBLE }
         page.addView(fb, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(46)))
-        var target = EnglishWordBank.all.first()
+        var target = listeningPool.first()
+        var firstRound = true
 
         fun nextRound() {
-            target = EnglishWordBank.all.random()
+            target = listeningPool.random()
             val options = linkedSetOf(target)
-            while (options.size < 4) options.add(EnglishWordBank.all.random())
+            while (options.size < 4) {
+                options.add((listeningPool + EnglishWordBank.all).random())
+            }
             grid.removeAllViews()
             options.shuffled().forEach { opt ->
                 val b = optionButton(opt.emoji, Color.WHITE).apply {
@@ -1827,6 +2571,7 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
                             stars++
                             recordCompletedChallenge()
                             saveProgress()
+                            playCorrectSound()
                             feedback(fb, "聽對了！ ${target.english} ⭐ +1", true)
                             handler.postDelayed({ nextRound() }, 900L)
                         } else wrong(fb, "再聽一次～")
@@ -1840,13 +2585,26 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
                     setMargins(dp(6), dp(6), dp(6), dp(6))
                 })
             }
-            handler.postDelayed({ speakEnglishUS(target.english) }, 500L)
+            if (firstRound) {
+                firstRound = false
+                handler.postDelayed({ speakListeningPromptThenWord(target.english) }, 500L)
+            } else {
+                handler.postDelayed({ speakEnglishUS(target.english) }, 500L)
+            }
         }
         replay.setOnClickListener { speakEnglishUS(target.english) }
         nextRound()
     }
 
-    private fun showEnglishPronunciation() {
+    private fun showEnglishPronunciation(category: String?) {
+        if (category == null) {
+            showEnglishGameCategoryList(
+                "發音練習",
+                "選一個主題開始發音練習"
+            ) { selected -> Screen.EnglishPronunciation(selected) }
+            return
+        }
+
         root.removeAllViews()
         root.setBackgroundColor(0xFFF7FBFF.toInt())
 
@@ -1868,10 +2626,11 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
         )
         root.addView(scroll)
 
-        page.addView(makePageHeader("發音練習"))
+        page.addView(makePageHeader("發音練習・$category"))
         page.addSpace(8)
 
-        val targetWord = EnglishWordBank.everyday.random()
+        val pronunciationPool = EnglishWordBank.wordsIn(category).ifEmpty { EnglishWordBank.all }
+        val targetWord = pronunciationPool.random()
         pronunciationTarget = targetWord.english
 
         val card = LinearLayout(this).apply {
@@ -1975,24 +2734,49 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
         handler.postDelayed({ speakEnglishUS(targetWord.english) }, 500L)
     }
 
+    private fun speakEnglishMenuThenNavigate(label: String, destination: Screen) {
+        root.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+        pendingEnglishNavigation = destination
+        val started = speakWithLocale(
+            label,
+            Locale.TAIWAN,
+            "english_menu_title"
+        )
+        handler.postDelayed({
+            if (pendingEnglishNavigation == destination) {
+                pendingEnglishNavigation = null
+                navigateTo(destination)
+            }
+        }, if (started) 2200L else 700L)
+    }
+
+    private fun speakListeningPromptThenWord(word: String) {
+        pendingListeningWord = word
+        val started = speakWithLocale(
+            "聽單字，選出正確圖片",
+            Locale.TAIWAN,
+            "english_listening_prompt"
+        )
+        if (!started) {
+            handler.postDelayed({
+                if (pendingListeningWord == word) {
+                    pendingListeningWord = null
+                    speakEnglishUS(word)
+                }
+            }, 700L)
+        }
+    }
+
     private fun speakChinese(text: String) {
-        if (!ttsReady) return
-        tts.language = Locale.TAIWAN
-        tts.setSpeechRate(0.86f)
-        tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "zh_question")
+        speakWithLocale(text, Locale.TAIWAN, "zh_question")
     }
 
     private fun speakEnglishUS(text: String) {
-        if (!ttsReady) return
         englishAccent = Locale.US
-        tts.stop()
-        tts.language = Locale.US
-        tts.setSpeechRate(0.82f)
-        tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "english_word")
+        speakWithLocale(text, Locale.US, "english_word")
     }
 
     private fun speakEnglish(text: String, locale: Locale = Locale.US) {
-        // 保留舊呼叫介面，但英文小教室統一使用美式發音。
         speakEnglishUS(text)
     }
 
@@ -2006,15 +2790,29 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
     }
 
     private fun speakPronunciationDemo() {
-        if (!ttsReady || pronunciationTarget.isBlank()) return
+        if (pronunciationTarget.isBlank()) return
         pronunciationStatusView?.text = "先聽示範…"
         pronunciationResultView?.text = "辨識內容：—"
         pronunciationScoreView?.text = "發音分數：—"
-        tts.stop()
         englishAccent = Locale.US
-        tts.language = Locale.US
-        tts.setSpeechRate(0.78f)
-        tts.speak(pronunciationTarget, TextToSpeech.QUEUE_FLUSH, null, "pronunciation_demo")
+        if (!ttsReady) {
+            pronunciationStatusView?.text = "語音引擎準備中，請再按一次跟讀"
+            return
+        }
+        if (!configureTtsLocale(Locale.US)) {
+            pronunciationStatusView?.text = "請先安裝美式英文語音資料"
+            return
+        }
+        // 跟讀示範再慢一點，但音高保持自然，避免機械/卡通感。
+        tts.setSpeechRate(0.80f)
+        tts.setPitch(1.02f)
+        tts.stop()
+        tts.speak(
+            pronunciationTarget,
+            TextToSpeech.QUEUE_FLUSH,
+            speechParams(),
+            "pronunciation_demo"
+        )
     }
 
     private fun beginPronunciationRecognition() {
@@ -2060,7 +2858,7 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
                     if (score >= 90) {
                         stars++
                         saveProgress()
-                        tone.startTone(ToneGenerator.TONE_PROP_ACK, 120)
+                        playCorrectSound()
                     }
                 }
                 override fun onPartialResults(partialResults: Bundle?) = Unit
@@ -2173,12 +2971,13 @@ private fun showTreasureMap(focus: MapFocus) {
         context = this,
         dailyProgress = dailyProgress,
         chestReady = canOpenStarChest(),
-        gameTitles = GameType.values().map { it.title },
-        gameEmojis = GameType.values().map { it.emoji },
+        gameTitles = GameType.values().take(8).map { it.title },
+        gameEmojis = GameType.values().take(8).map { it.emoji },
         onNodeClick = { index ->
-            if (index in GameType.values().indices) {
+            val adventureGames = GameType.values().take(8)
+            if (index in adventureGames.indices) {
                 root.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-                navigateTo(Screen.Game(GameType.values()[index]))
+                navigateTo(Screen.Game(adventureGames[index]))
             }
         },
         onChestClick = {
@@ -2327,7 +3126,7 @@ private fun openStarChest() {
 
     chestClaims++
     saveProgress()
-    tone.startTone(ToneGenerator.TONE_PROP_ACK, 180)
+    playCorrectSound()
     root.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
 
     val badgeTitle = chestBadgeTitle(chestClaims)
