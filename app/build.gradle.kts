@@ -13,7 +13,7 @@ val hasStableSigning =
     !stableKeystorePassword.isNullOrBlank() &&
     !stableKeyAlias.isNullOrBlank() &&
     !stableKeyPassword.isNullOrBlank() &&
-    file(stableKeystorePath!!).exists()
+    stableKeystorePath?.let { file(it).exists() } == true
 
 android {
     namespace = "com.boga.kidgame"
@@ -23,8 +23,8 @@ android {
         applicationId = "com.boga.kidgame"
         minSdk = 24
         targetSdk = 35
-        versionCode = 33
-        versionName = "0.8.0"
+        versionCode = 34
+        versionName = "0.8.1"
     }
 
     val stableSigningConfig = if (hasStableSigning) {

@@ -39,7 +39,7 @@ import kotlin.random.Random
 
 class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
-    // BUILD_MARKER_v0_8_0 — GitHub 上搜尋到這行才代表真的在編譯 0.8.0。
+    // BUILD_MARKER_v0_8_1 — GitHub 上搜尋到這行才代表真的在編譯 0.8.0。
 
     private enum class GameType(val title: String, val emoji: String, val subtitle: String) {
         FIND("找一找", "🔍", "專注搜尋"),
@@ -1813,6 +1813,65 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
             ).apply { setMargins(0, dp(6), 0, dp(6)) })
         }
+    }
+
+
+    private fun showGameLibrary() {
+        root.removeAllViews()
+        root.setBackgroundColor(0xFFFFF8E9.toInt())
+
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+            isVerticalScrollBarEnabled = false
+        }
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(10), dp(8), dp(10), dp(24))
+        }
+        scroll.addView(content, ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+        root.addView(scroll)
+
+        content.addView(makePageHeader("遊戲庫 12款"))
+        content.addSpace(7)
+
+        content.addView(
+            text("經典遊戲", 18f, brown, true, Gravity.START or Gravity.CENTER_VERTICAL),
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(38))
+        )
+
+        val games = GameType.values().toList()
+
+        fun addRows(items: List<GameType>) {
+            items.chunked(2).forEach { pair ->
+                val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+                pair.forEachIndexed { index, game ->
+                    val lp = LinearLayout.LayoutParams(0, dp(76), 1f).apply {
+                        if (index == 0) marginEnd = dp(5) else marginStart = dp(5)
+                    }
+                    row.addView(makeGameTile(game), lp)
+                }
+                if (pair.size == 1) {
+                    row.addView(
+                        Space(this),
+                        LinearLayout.LayoutParams(0, dp(76), 1f).apply { marginStart = dp(5) }
+                    )
+                }
+                content.addView(row)
+                content.addSpace(6)
+            }
+        }
+
+        addRows(games.take(8))
+
+        content.addSpace(4)
+        content.addView(
+            text("新遊戲 ✨", 18f, coral, true, Gravity.START or Gravity.CENTER_VERTICAL),
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(38))
+        )
+        addRows(games.drop(8))
     }
 
 
