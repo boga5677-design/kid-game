@@ -39,7 +39,7 @@ import kotlin.random.Random
 
 class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
-    // BUILD_MARKER_v0_8_3 — GitHub 上搜尋到這行才代表真的在編譯 0.8.0。
+    // BUILD_MARKER_v0_8_4 — GitHub 上搜尋到這行才代表真的在編譯 0.8.0。
 
     private enum class GameType(val title: String, val emoji: String, val subtitle: String) {
         FIND("找一找", "🔍", "專注搜尋"),
@@ -102,6 +102,8 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     )
     private var pendingTts: PendingTts? = null
     private var ttsInitRetryCount = 0
+    private var preferredTtsEngineTried = false
+    private val preferredGoogleTtsEngine = "com.google.android.tts"
 
     private val bg = Color.rgb(255, 248, 234)
     private val brown = Color.rgb(86, 64, 48)
@@ -114,7 +116,8 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         difficulty = prefs.getInt("difficulty", 1).coerceIn(1, 3)
         chestClaims = prefs.getInt("chest_claims", 0)
         syncDailyMission()
-        tts = TextToSpeech(this, this)
+        preferredTtsEngineTried = true
+        tts = TextToSpeech(this, this, preferredGoogleTtsEngine)
 
         root = FrameLayout(this).apply {
             setBackgroundColor(bg)
@@ -159,6 +162,8 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
                 handler.postDelayed({
                     if (!isFinishing && !isDestroyed) {
                         runCatching { tts.shutdown() }
+                        // Google Speech Services 不可用時，退回手機預設 TTS。
+                        preferredTtsEngineTried = false
                         tts = TextToSpeech(this, this)
                     }
                 }, 700L)
@@ -256,74 +261,77 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         ) return false
 
         val isEnglish = locale.language == Locale.ENGLISH.language
-
-        // v0.8.3：所有朗讀統一使用「輕柔女聲優先」。
-        // Android TTS 沒有跨引擎統一的 gender 欄位，所以用 Voice 名稱、features、
-        // 語系、quality 綜合評分。若裝置有明確 female voice，會強制優先。
         val matchingVoices = tts.voices
             ?.filter { voice ->
                 voice.locale.language.equals(locale.language, ignoreCase = true)
             }
             .orEmpty()
 
-        val preferredVoice = matchingVoices.maxByOrNull { voice ->
-            val name = voice.name.lowercase(Locale.ROOT)
+        fun descriptor(voice: android.speech.tts.Voice): String {
             val features = voice.features.orEmpty()
                 .joinToString(" ")
                 .lowercase(Locale.ROOT)
-            val descriptor = "$name $features"
+            return "${voice.name.lowercase(Locale.ROOT)} $features"
+        }
 
-            val explicitFemale =
-                "female" in descriptor ||
-                "woman" in descriptor ||
-                "girl" in descriptor ||
-                "feminine" in descriptor ||
-                "voice_f" in descriptor ||
-                "voice-f" in descriptor ||
-                Regex("(^|[-_# .])fem($|[-_# .])").containsMatchIn(descriptor)
+        // v0.8.4：
+        // 先找明確女聲。Google TTS 常見聲音名稱可能包含 #female_1/#female_2。
+        // 台灣中文 Google Android TTS 常見第一組 cmn-tw-x-ctc，
+        // 若裝置有這組，優先當作女聲候選。
+        val explicitFemale = matchingVoices.filter { voice ->
+            val d = descriptor(voice)
+            "female" in d ||
+                "woman" in d ||
+                "girl" in d ||
+                "feminine" in d ||
+                "#female_" in d ||
+                "voice_f" in d ||
+                "voice-f" in d ||
+                Regex("(^|[-_# .])fem($|[-_# .])").containsMatchIn(d)
+        }
 
-            // female 內含 male 字串，因此只有 explicitFemale=false 時才判定 male。
-            val explicitMale =
-                !explicitFemale &&
-                (
-                    Regex("(^|[-_# .])male($|[-_# .])").containsMatchIn(descriptor) ||
-                    Regex("(^|[-_# .])man($|[-_# .])").containsMatchIn(descriptor) ||
-                    "masculine" in descriptor
-                )
+        val knownFemaleFamily = matchingVoices.filter { voice ->
+            val n = voice.name.lowercase(Locale.ROOT)
+            when {
+                locale.language == Locale.CHINESE.language ->
+                    n.startsWith("cmn-tw-x-ctc") ||
+                    n.contains("cmn-tw-standard-a") ||
+                    n.contains("cmn-tw-wavenet-a")
+                isEnglish ->
+                    n.contains("#female_") ||
+                    n.startsWith("en-us-x-sfg")
+                else -> false
+            }
+        }
 
-            val naturalQuality =
-                "neural" in descriptor ||
-                "natural" in descriptor ||
-                "wavenet" in descriptor ||
-                "studio" in descriptor ||
-                "premium" in descriptor ||
-                "enhanced" in descriptor ||
-                "high quality" in descriptor
+        val candidates = when {
+            explicitFemale.isNotEmpty() -> explicitFemale
+            knownFemaleFamily.isNotEmpty() -> knownFemaleFamily
+            else -> matchingVoices
+        }
 
-            var score = voice.quality * 24
+        val preferredVoice = candidates.maxByOrNull { voice ->
+            val d = descriptor(voice)
+            var score = voice.quality * 30
 
-            // 同國家語音優先，例如 zh-TW / en-US。
             if (locale.country.isNotBlank() &&
                 voice.locale.country.equals(locale.country, ignoreCase = true)
-            ) {
-                score += 2400
+            ) score += 2500
+
+            if ("female" in d || "#female_" in d || "woman" in d || "girl" in d) {
+                score += 16000
             }
 
-            // 女聲權重遠高於其他項目，避免選到品質高但明確是男聲的 voice。
-            if (explicitFemale) score += 18000
-            if (explicitMale) score -= 18000
+            if (
+                "neural" in d ||
+                "natural" in d ||
+                "wavenet" in d ||
+                "studio" in d ||
+                "premium" in d ||
+                "enhanced" in d
+            ) score += 4500
 
-            // 女聲之中再挑真人感較佳的 neural / natural 類 voice。
-            if (naturalQuality) score += 4200
-
-            // 網路型 voice 通常品質較高，但不強制，離線 voice 仍可正常運作。
-            if (voice.isNetworkConnectionRequired || "network" in descriptor) score += 500
-
-            // 舊式 compact / legacy / low-quality voice 降權。
-            if ("compact" in descriptor || "legacy" in descriptor || "low quality" in descriptor) {
-                score -= 2200
-            }
-
+            if ("legacy" in d || "compact" in d || "low quality" in d) score -= 2500
             score
         }
 
@@ -331,15 +339,23 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             runCatching { tts.voice = preferredVoice }
         }
 
-        // 「輕柔女老師」設定：
-        // 不再用過高 pitch 模仿小孩，避免電子感；語速稍慢、音高只小幅提高。
-        tts.setSpeechRate(if (isEnglish) 0.83f else 0.85f)
-        tts.setPitch(if (isEnglish) 1.045f else 1.055f)
+        // 聲線必須有明顯改變：
+        // 女聲候選存在時只小幅提高音高；找不到女聲時，提高到 1.12~1.13
+        // 讓 Samsung/其他 TTS 也能聽出女聲方向，而不是完全維持原聲。
+        val foundFemaleVoice = explicitFemale.isNotEmpty() || knownFemaleFamily.isNotEmpty()
+        tts.setSpeechRate(if (isEnglish) 0.84f else 0.86f)
+        tts.setPitch(
+            if (foundFemaleVoice) {
+                if (isEnglish) 1.055f else 1.065f
+            } else {
+                if (isEnglish) 1.12f else 1.13f
+            }
+        )
         return true
     }
 
     private fun speechParams(): Bundle = Bundle().apply {
-        putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 0.92f)
+        putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 0.95f)
     }
 
     private fun speakWithLocale(
@@ -512,7 +528,16 @@ private fun showHome() {
     // 56/62dp 會把 0/5、0/30 下緣裁掉，因此提高任務區高度；
     // 同時略縮毛孩區，總高度仍維持單頁。
     val missionHeight = if (veryCompact) 72 else if (compact) 78 else 86
-    val petHeight = if (veryCompact) 66 else if (compact) 80 else 96
+
+    // home_pets.png 原始比例約 2.43:1。
+    // 上一版用 CENTER_CROP + 66/80/96dp，必然會切掉耳朵、腳和老師姓名。
+    // 這版依螢幕寬度估算理想高度，再設安全上限，完整顯示整張毛孩圖。
+    val idealPetHeight = ((screenWidthDp - outerPad * 2) / 2.43f).roundToInt()
+    val petHeight = when {
+        veryCompact -> idealPetHeight.coerceIn(112, 128)
+        compact -> idealPetHeight.coerceIn(128, 146)
+        else -> idealPetHeight.coerceIn(142, 160)
+    }
     val englishHeight = if (veryCompact) 40 else if (compact) 44 else 50
     val badgeHeight = if (veryCompact) 38 else if (compact) 42 else 46
 
@@ -580,8 +605,9 @@ private fun showHome() {
 
     val pets = ImageView(this).apply {
         setImageResource(R.drawable.home_pets)
-        scaleType = ImageView.ScaleType.CENTER_CROP
-        adjustViewBounds = false
+        // FIT_CENTER 確保三隻毛孩、耳朵、腳與姓名牌都不被裁掉。
+        scaleType = ImageView.ScaleType.FIT_CENTER
+        adjustViewBounds = true
         background = null
         clipToOutline = false
         contentDescription = "偶貴老師、黑糖老師、熊熊老師"
@@ -594,7 +620,7 @@ private fun showHome() {
         )
     )
     // 毛孩圖片與第一列遊戲卡完全分層，不讓 elevation / 字型超出造成視覺重疊。
-    content.addSpace(if (veryCompact) 4 else 6)
+    content.addSpace(if (veryCompact) 3 else 4)
 
     // 12 款遊戲直接整合到首頁：4欄 × 3列。
     // 不再另外放「遊戲庫 12款」入口，因此不存在經典8款在遊戲庫重複顯示的問題。
@@ -905,7 +931,7 @@ private fun makeCompactHomeGameTile(game: GameType, compact: Boolean): View {
         contentDescription = game.title
     }
 
-    val iconSize = if (compact) 31 else 38
+    val iconSize = if (compact) 27 else 34
     tile.addView(
         makeGameRoundIcon(game),
         LinearLayout.LayoutParams(dp(iconSize), dp(iconSize))
@@ -921,7 +947,7 @@ private fun makeCompactHomeGameTile(game: GameType, compact: Boolean): View {
             maxLines = 1
             setPadding(dp(1), 0, dp(1), 0)
             TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
-                this, 9, if (compact) 13 else 15, 1, TypedValue.COMPLEX_UNIT_SP
+                this, 8, if (compact) 12 else 14, 1, TypedValue.COMPLEX_UNIT_SP
             )
         },
         LinearLayout.LayoutParams(
@@ -3188,7 +3214,7 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
         }
         // 跟讀示範再慢一點，但音高保持自然，避免機械/卡通感。
         tts.setSpeechRate(0.76f)
-        tts.setPitch(1.045f)
+        // 保留 configureTtsLocale() 選到的女聲；只放慢，不重設成另一個聲線。
         tts.stop()
         tts.speak(
             pronunciationTarget,
