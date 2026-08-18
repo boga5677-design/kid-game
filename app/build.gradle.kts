@@ -23,13 +23,13 @@ android {
         applicationId = "com.boga.kidgame"
         minSdk = 24
         targetSdk = 35
-        versionCode = 34
-        versionName = "0.8.1"
+        versionCode = 35
+        versionName = "0.8.2"
     }
 
     val stableSigningConfig = if (hasStableSigning) {
         signingConfigs.create("stable") {
-            storeFile = file(stableKeystorePath!!)
+            storeFile = file(requireNotNull(stableKeystorePath))
             storePassword = stableKeystorePassword
             keyAlias = stableKeyAlias
             keyPassword = stableKeyPassword

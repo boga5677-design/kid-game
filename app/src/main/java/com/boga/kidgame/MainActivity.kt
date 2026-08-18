@@ -39,7 +39,7 @@ import kotlin.random.Random
 
 class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
-    // BUILD_MARKER_v0_8_1 — GitHub 上搜尋到這行才代表真的在編譯 0.8.0。
+    // BUILD_MARKER_v0_8_2 — GitHub 上搜尋到這行才代表真的在編譯 0.8.0。
 
     private enum class GameType(val title: String, val emoji: String, val subtitle: String) {
         FIND("找一找", "🔍", "專注搜尋"),
@@ -124,8 +124,9 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         // Android 15 / Samsung 三鍵導覽列會以 edge-to-edge 疊在 App 內容上。
         // 只套用底部 system bar inset，保留目前上方狀態列的版面位置。
         ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
+            val statusBar = insets.getInsets(WindowInsetsCompat.Type.statusBars())
             val navigationBar = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
-            view.setPadding(0, 0, 0, navigationBar.bottom)
+            view.setPadding(0, statusBar.top, 0, navigationBar.bottom)
             insets
         }
         ViewCompat.requestApplyInsets(root)
@@ -255,37 +256,67 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
         val isEnglish = locale.language == Locale.ENGLISH.language
 
-        // v0.7.6：優先「真人感」而不是把音高硬拉成卡通聲。
-        // Android TTS 的 child / female 名稱並沒有跨廠牌標準，先前只靠名稱挑 Voice
-        // 可能反而選到低品質 compact voice。這版改成：
-        // 1. 同語言、同國家優先；2. Voice quality 越高越優先；
-        // 3. neural / natural / premium / enhanced / network 類型加權；
-        // 4. compact / legacy 類型降權。
+        // v0.8.2：明確「女聲優先」。
+        // Android 不同 TTS 引擎沒有統一 gender 欄位，因此同時檢查 voice.name + features。
+        // 選擇順序：
+        // 1. 同語言 / 同國家
+        // 2. 明確 female / woman / girl / fem 女聲標記
+        // 3. neural / natural / premium / enhanced 等真人感較高 voice
+        // 4. 高 quality
+        // 若手機沒有標示性別的 voice，仍選同語系最高品質 voice，
+        // 再用非常輕微的 pitch 調整維持偏女老師的聲線，不做卡通化拉高。
         val matchingVoices = tts.voices
-            ?.filter { it.locale.language.equals(locale.language, ignoreCase = true) }
+            ?.filter { voice ->
+                voice.locale.language.equals(locale.language, ignoreCase = true)
+            }
             .orEmpty()
 
         val preferredVoice = matchingVoices.maxByOrNull { voice ->
+            val featureText = voice.features.orEmpty().joinToString(" ").lowercase(Locale.ROOT)
             val name = voice.name.lowercase(Locale.ROOT)
-            var score = voice.quality * 10
+            val descriptor = "$name $featureText"
+
+            val explicitFemale =
+                "female" in descriptor ||
+                "woman" in descriptor ||
+                "girl" in descriptor ||
+                Regex("(^|[-_# .])fem($|[-_# .])").containsMatchIn(descriptor)
+
+            // 避免把 female 裡的 male 誤判成男聲。
+            val explicitMale =
+                !explicitFemale &&
+                (
+                    Regex("(^|[-_# .])male($|[-_# .])").containsMatchIn(descriptor) ||
+                    Regex("(^|[-_# .])man($|[-_# .])").containsMatchIn(descriptor)
+                )
+
+            var score = voice.quality * 20
+
             if (locale.country.isNotBlank() &&
-                voice.locale.country.equals(locale.country, ignoreCase = true)) score += 1200
-            if (voice.isNetworkConnectionRequired) score += 240
-            if ("neural" in name || "natural" in name || "wavenet" in name ||
-                "studio" in name || "premium" in name || "enhanced" in name ||
-                "network" in name) score += 900
-            if ("female" in name || "woman" in name || "girl" in name) score += 80
-            if ("compact" in name || "legacy" in name || "low" in name) score -= 900
+                voice.locale.country.equals(locale.country, ignoreCase = true)
+            ) score += 1800
+
+            if (explicitFemale) score += 12000
+            if (explicitMale) score -= 12000
+
+            if ("neural" in descriptor || "natural" in descriptor ||
+                "wavenet" in descriptor || "studio" in descriptor ||
+                "premium" in descriptor || "enhanced" in descriptor
+            ) score += 2600
+
+            if ("network" in descriptor || voice.isNetworkConnectionRequired) score += 350
+            if ("compact" in descriptor || "legacy" in descriptor || "low" in descriptor) score -= 1500
+
             score
         }
+
         if (preferredVoice != null) {
             runCatching { tts.voice = preferredVoice }
         }
 
-        // 真人感的關鍵是回到接近自然音高，只稍微放慢教學速度。
-        // 過高 pitch 會更像電子合成音，所以取消 v0.7.5 的 1.14 / 1.17。
-        tts.setSpeechRate(if (isEnglish) 0.88f else 0.90f)
-        tts.setPitch(if (isEnglish) 1.03f else 1.04f)
+        // 真人女老師感：語速略慢、音高只微幅提高。
+        tts.setSpeechRate(if (isEnglish) 0.86f else 0.88f)
+        tts.setPitch(if (isEnglish) 1.07f else 1.08f)
         return true
     }
 
@@ -449,157 +480,412 @@ private fun showHome() {
     root.removeAllViews()
     root.setBackgroundColor(0xFFFFF8E9.toInt())
 
-    // 以一頁為主要設計目標；ScrollView 只作為較矮手機的安全備援。
-    val scroll = ScrollView(this).apply {
-        isFillViewport = true
-        isVerticalScrollBarEnabled = false
-        overScrollMode = View.OVER_SCROLL_NEVER
-    }
+    // v0.8.2：首頁改為「真正一頁」。
+    // 不用 ScrollView；依螢幕高度縮放 header / 任務 / 毛孩 / 12款遊戲。
+    val screenHeightDp = resources.configuration.screenHeightDp
+    val screenWidthDp = resources.configuration.screenWidthDp
+    val compact = screenHeightDp < 720
+    val veryCompact = screenHeightDp < 640
+
+    val outerPad = if (veryCompact) 5 else if (compact) 7 else 9
+    val gap = if (veryCompact) 2 else 3
+    val headerHeight = if (veryCompact) 44 else if (compact) 50 else 58
+    val missionHeight = if (veryCompact) 56 else if (compact) 62 else 72
+    val petHeight = if (veryCompact) 72 else if (compact) 88 else 108
+    val englishHeight = if (veryCompact) 40 else if (compact) 44 else 50
+    val badgeHeight = if (veryCompact) 38 else if (compact) 42 else 46
+
     val content = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        setPadding(dp(10), dp(7), dp(10), dp(6))
+        setPadding(dp(outerPad), dp(gap), dp(outerPad), dp(gap))
+        clipChildren = false
+        clipToPadding = false
     }
-    scroll.addView(content, FrameLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT,
-        ViewGroup.LayoutParams.WRAP_CONTENT
-    ))
-    root.addView(scroll)
+    root.addView(
+        content,
+        FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        )
+    )
 
-    // 最上方只保留真正有意義的星星 / 寶箱進度。
-    content.addView(makeTopStats(), LinearLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-    ))
-    content.addSpace(3)
+    content.addView(
+        makeHomeTopStats(compact = compact || veryCompact),
+        LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            dp(headerHeight)
+        )
+    )
+    content.addSpace(gap)
 
     val missionRow = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER
     }
     missionRow.addView(
-        makeMissionCard(
-            R.drawable.mission_calendar,
-            "每日任務",
-            "$dailyProgress/5",
-            0xFFF0F8D9.toInt(),
-            0xFF58A815.toInt()
+        makeHomeMissionCard(
+            iconRes = R.drawable.mission_calendar,
+            title = "每日任務",
+            value = "$dailyProgress/5",
+            color = 0xFFF0F8D9.toInt(),
+            valueColor = 0xFF58A815.toInt(),
+            compact = compact || veryCompact
         ) { navigateTo(Screen.TreasureMap(MapFocus.DAILY)) },
-        LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = dp(5) }
+        LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f).apply {
+            marginEnd = dp(3)
+        }
     )
     missionRow.addView(
-        makeMissionCard(
-            R.drawable.mission_treasure,
-            "星星寶箱",
-            if (canOpenStarChest()) "可開啟!" else "${starChestProgress()}/30",
-            0xFFFFF1D4.toInt(),
-            0xFFE37500.toInt()
+        makeHomeMissionCard(
+            iconRes = R.drawable.mission_treasure,
+            title = "星星寶箱",
+            value = if (canOpenStarChest()) "可開啟!" else "${starChestProgress()}/30",
+            color = 0xFFFFF1D4.toInt(),
+            valueColor = 0xFFE37500.toInt(),
+            compact = compact || veryCompact
         ) { navigateTo(Screen.TreasureMap(MapFocus.CHEST)) },
-        LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(5) }
+        LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f).apply {
+            marginStart = dp(3)
+        }
     )
-    content.addView(missionRow)
-    content.addSpace(3)
+    content.addView(
+        missionRow,
+        LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            dp(missionHeight)
+        )
+    )
+    content.addSpace(gap)
 
     val pets = ImageView(this).apply {
         setImageResource(R.drawable.home_pets)
         scaleType = ImageView.ScaleType.CENTER_CROP
-        adjustViewBounds = true
-        // v0.6.9：home_pets 已清掉圖片本身烤進去的上一排卡片殘影。
-        // 這裡不再加第二層 background / outline，避免出現紅框那條縮小版方格。
+        adjustViewBounds = false
         background = null
         clipToOutline = false
         contentDescription = "偶貴老師、黑糖老師、熊熊老師"
     }
-    content.addView(pets, LinearLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT, dp(110)
-    ))
-    content.addSpace(3)
+    content.addView(
+        pets,
+        LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            dp(petHeight)
+        )
+    )
+    content.addSpace(gap)
 
-    val gameValues = GameType.values().take(8)
-    for (row in 0 until 4) {
-        val line = LinearLayout(this).apply {
+    // 12 款遊戲直接整合到首頁：4欄 × 3列。
+    // 不再另外放「遊戲庫 12款」入口，因此不存在經典8款在遊戲庫重複顯示的問題。
+    val gameGrid = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        clipChildren = false
+        clipToPadding = false
+    }
+    val allGames = GameType.values().toList()
+    repeat(3) { rowIndex ->
+        val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
+            clipChildren = false
+            clipToPadding = false
         }
-        repeat(2) { col ->
-            val index = row * 2 + col
-            val tile = makeGameTile(gameValues[index])
-            val lp = LinearLayout.LayoutParams(0, dp(70), 1f)
-            if (col == 0) lp.marginEnd = dp(5) else lp.marginStart = dp(5)
-            line.addView(tile, lp)
-        }
-        content.addView(line)
-        if (row < 3) content.addSpace(3)
-    }
-
-    content.addSpace(4)
-
-    val gameLibrary = LinearLayout(this).apply {
-        orientation = LinearLayout.HORIZONTAL
-        gravity = Gravity.CENTER_VERTICAL
-        minimumHeight = dp(48)
-        setPadding(dp(14), dp(4), dp(14), dp(4))
-        background = rounded(0xFFE8F7E2.toInt(), 21)
-        elevation = dp(2).toFloat()
-        isClickable = true
-        isFocusable = true
-        addView(text("🎮", 23f),
-            LinearLayout.LayoutParams(dp(50), ViewGroup.LayoutParams.WRAP_CONTENT))
-        addView(text("遊戲庫　12款", 17f, brown, true,
-            Gravity.START or Gravity.CENTER_VERTICAL).apply {
-            maxLines = 1
-            TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
-                this, 14, 18, 1, TypedValue.COMPLEX_UNIT_SP
+        repeat(4) { col ->
+            val index = rowIndex * 4 + col
+            val game = allGames[index]
+            row.addView(
+                makeCompactHomeGameTile(game, compact = compact || veryCompact),
+                LinearLayout.LayoutParams(
+                    0,
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    1f
+                ).apply {
+                    val side = dp(if (veryCompact) 1 else 2)
+                    setMargins(side, dp(1), side, dp(1))
+                }
             )
-        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        addView(text("›", 27f, 0xFF4C9A45.toInt(), true),
-            LinearLayout.LayoutParams(dp(34), ViewGroup.LayoutParams.WRAP_CONTENT))
-        setOnClickListener { navigateTo(Screen.GameLibrary) }
+        }
+        gameGrid.addView(
+            row,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
+        )
     }
-    content.addView(gameLibrary, LinearLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-    ))
-
-    content.addSpace(4)
+    content.addView(
+        gameGrid,
+        LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            0,
+            1f
+        )
+    )
+    content.addSpace(gap)
 
     val english = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        minimumHeight = dp(52)
-        setPadding(dp(14), dp(5), dp(14), dp(5))
-        background = rounded(0xFFDFF3FF.toInt(), 22)
-        elevation = dp(2).toFloat()
+        setPadding(dp(if (compact) 10 else 14), 0, dp(10), 0)
+        background = rounded(0xFFDFF3FF.toInt(), if (compact) 17 else 21)
+        elevation = dp(1).toFloat()
         isClickable = true
         isFocusable = true
-        addView(text("ABC", 21f, 0xFF2879CB.toInt(), true),
-            LinearLayout.LayoutParams(dp(58), ViewGroup.LayoutParams.WRAP_CONTENT))
-        addView(text("英文小教室", 18f, brown, true,
-            Gravity.START or Gravity.CENTER_VERTICAL).apply {
-            maxLines = 1
-            TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
-                this, 14, 19, 1, TypedValue.COMPLEX_UNIT_SP
-            )
-        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        addView(text("›", 27f, 0xFF2879CB.toInt(), true),
-            LinearLayout.LayoutParams(dp(34), ViewGroup.LayoutParams.WRAP_CONTENT))
+
+        addView(
+            text("ABC", if (compact) 18f else 21f, 0xFF2879CB.toInt(), true),
+            LinearLayout.LayoutParams(dp(if (compact) 52 else 60), ViewGroup.LayoutParams.MATCH_PARENT)
+        )
+        addView(
+            text(
+                "英文小教室",
+                if (compact) 16f else 18f,
+                brown,
+                true,
+                Gravity.START or Gravity.CENTER_VERTICAL
+            ).apply {
+                maxLines = 1
+                TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
+                    this, 12, if (compact) 17 else 19, 1, TypedValue.COMPLEX_UNIT_SP
+                )
+            },
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
+        )
+        addView(
+            text("›", if (compact) 23f else 27f, 0xFF2879CB.toInt(), true),
+            LinearLayout.LayoutParams(dp(28), ViewGroup.LayoutParams.MATCH_PARENT)
+        )
         setOnClickListener { navigateTo(Screen.EnglishHome) }
     }
-    content.addView(english, LinearLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-    ))
-
-    content.addSpace(4)
-
-    val achievements = text("🏅 我的徽章　　已累積 ⭐ $stars", 16f, brown, true, Gravity.START or Gravity.CENTER_VERTICAL).apply {
-        maxLines = 1
-        TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
-            this, 13, 17, 1, TypedValue.COMPLEX_UNIT_SP
+    content.addView(
+        english,
+        LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            dp(englishHeight)
         )
-        background = rounded(0xFFFFE9A9.toInt(), 20)
-        minimumHeight = dp(46)
+    )
+    content.addSpace(gap)
+
+    val achievements = text(
+        "🏅 我的徽章　　已累積 ⭐ $stars",
+        if (compact) 14f else 16f,
+        brown,
+        true,
+        Gravity.START or Gravity.CENTER_VERTICAL
+    ).apply {
+        maxLines = 1
+        setPadding(dp(12), 0, dp(8), 0)
+        TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
+            this, 11, if (compact) 15 else 17, 1, TypedValue.COMPLEX_UNIT_SP
+        )
+        background = rounded(0xFFFFE9A9.toInt(), if (compact) 16 else 20)
         setOnClickListener { navigateTo(Screen.Achievements) }
     }
-    content.addView(achievements, LinearLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-    ))
-    content.addSpace(2)
+    content.addView(
+        achievements,
+        LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            dp(badgeHeight)
+        )
+    )
+}
+
+private fun makeHomeTopStats(compact: Boolean): View {
+    return LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        background = rounded(Color.WHITE, if (compact) 18 else 24)
+        elevation = dp(2).toFloat()
+        setPadding(dp(if (compact) 8 else 12), 0, dp(6), 0)
+
+        addView(
+            text(
+                "小小腦力樂園",
+                if (compact) 17f else 20f,
+                0xFF4A2E1D.toInt(),
+                true,
+                Gravity.START or Gravity.CENTER_VERTICAL
+            ).apply {
+                maxLines = 1
+                TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
+                    this, 13, if (compact) 18 else 21, 1, TypedValue.COMPLEX_UNIT_SP
+                )
+            },
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
+        )
+
+        addView(
+            makeHomeTopCounter(R.drawable.top_star, stars.toString(), compact),
+            LinearLayout.LayoutParams(dp(if (compact) 68 else 82), ViewGroup.LayoutParams.MATCH_PARENT)
+        )
+
+        // 星星寶箱一律使用真正寶箱 drawable，不用關卡/旗幟圖示。
+        addView(
+            makeHomeTopCounter(
+                R.drawable.mission_treasure,
+                if (canOpenStarChest()) "OPEN" else "${starChestProgress()}/30",
+                compact
+            ),
+            LinearLayout.LayoutParams(dp(if (compact) 88 else 108), ViewGroup.LayoutParams.MATCH_PARENT)
+        )
+    }
+}
+
+private fun makeHomeTopCounter(iconRes: Int, value: String, compact: Boolean): View {
+    return LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        val icon = ImageView(this@MainActivity).apply {
+            setImageResource(iconRes)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+        }
+        addView(
+            icon,
+            LinearLayout.LayoutParams(dp(if (compact) 26 else 32), dp(if (compact) 26 else 32))
+        )
+        addView(
+            text(
+                value,
+                if (compact) 14f else 17f,
+                0xFF3B2417.toInt(),
+                true,
+                Gravity.START or Gravity.CENTER_VERTICAL
+            ).apply {
+                maxLines = 1
+                setPadding(dp(2), 0, 0, 0)
+                TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
+                    this, 10, if (compact) 15 else 18, 1, TypedValue.COMPLEX_UNIT_SP
+                )
+            },
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
+        )
+    }
+}
+
+private fun makeHomeMissionCard(
+    iconRes: Int,
+    title: String,
+    value: String,
+    color: Int,
+    valueColor: Int,
+    compact: Boolean,
+    onClick: () -> Unit
+): View {
+    return LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(dp(if (compact) 6 else 9), dp(3), dp(6), dp(3))
+        background = rounded(color, if (compact) 18 else 23)
+        isClickable = true
+        isFocusable = true
+
+        val icon = ImageView(this@MainActivity).apply {
+            setImageResource(iconRes)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            isClickable = false
+            isFocusable = false
+        }
+        addView(
+            icon,
+            LinearLayout.LayoutParams(
+                dp(if (compact) 38 else 50),
+                dp(if (compact) 38 else 50)
+            )
+        )
+
+        val words = LinearLayout(this@MainActivity).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(if (compact) 6 else 8), 0, 0, 0)
+        }
+        words.addView(
+            text(
+                title,
+                if (compact) 13f else 15f,
+                0xFF4A2E1D.toInt(),
+                true,
+                Gravity.START or Gravity.CENTER_VERTICAL
+            ).apply {
+                maxLines = 1
+                setPadding(0, 0, 0, 0)
+            },
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
+        )
+        words.addView(
+            text(
+                value,
+                if (compact) 18f else 21f,
+                valueColor,
+                true,
+                Gravity.START or Gravity.CENTER_VERTICAL
+            ).apply {
+                maxLines = 1
+                setPadding(0, 0, 0, 0)
+            },
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
+        )
+        addView(words, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
+
+        setOnClickListener {
+            performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+            onClick()
+        }
+    }
+}
+
+private fun makeCompactHomeGameTile(game: GameType, compact: Boolean): View {
+    val tile = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        gravity = Gravity.CENTER
+        background = rounded(gameCardColor(game), if (compact) 13 else 17, Color.WHITE, 1)
+        elevation = dp(1).toFloat()
+        setPadding(dp(2), dp(2), dp(2), dp(1))
+        isClickable = true
+        isFocusable = true
+        contentDescription = game.title
+    }
+
+    val iconSize = if (compact) 34 else 42
+    tile.addView(
+        makeGameRoundIcon(game),
+        LinearLayout.LayoutParams(dp(iconSize), dp(iconSize))
+    )
+
+    tile.addView(
+        text(
+            game.title,
+            if (compact) 12f else 14f,
+            0xFF4B2C18.toInt(),
+            true
+        ).apply {
+            maxLines = 1
+            setPadding(dp(1), 0, dp(1), 0)
+            TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
+                this, 9, if (compact) 13 else 15, 1, TypedValue.COMPLEX_UNIT_SP
+            )
+        },
+        LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            0,
+            1f
+        )
+    )
+
+    tile.setOnClickListener {
+        tile.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+        if (ttsReady) {
+            pendingGameNavigation = game
+            speakWithLocale(game.title, Locale.TAIWAN, "home_game_title")
+            handler.postDelayed({
+                if (pendingGameNavigation == game) {
+                    pendingGameNavigation = null
+                    navigateTo(Screen.Game(game))
+                }
+            }, 1500L)
+        } else {
+            navigateTo(Screen.Game(game))
+        }
+    }
+    return tile
 }
 
 private fun makeTopStats(): View {
@@ -1820,58 +2106,35 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
         root.removeAllViews()
         root.setBackgroundColor(0xFFFFF8E9.toInt())
 
-        val scroll = ScrollView(this).apply {
-            isFillViewport = true
-            isVerticalScrollBarEnabled = false
-        }
-        val content = LinearLayout(this).apply {
+        val page = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(10), dp(8), dp(10), dp(24))
+            gravity = Gravity.CENTER
+            setPadding(dp(18), dp(18), dp(18), dp(18))
         }
-        scroll.addView(content, ViewGroup.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        ))
-        root.addView(scroll)
-
-        content.addView(makePageHeader("遊戲庫 12款"))
-        content.addSpace(7)
-
-        content.addView(
-            text("經典遊戲", 18f, brown, true, Gravity.START or Gravity.CENTER_VERTICAL),
-            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(38))
+        root.addView(
+            page,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
         )
 
-        val games = GameType.values().toList()
-
-        fun addRows(items: List<GameType>) {
-            items.chunked(2).forEach { pair ->
-                val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-                pair.forEachIndexed { index, game ->
-                    val lp = LinearLayout.LayoutParams(0, dp(76), 1f).apply {
-                        if (index == 0) marginEnd = dp(5) else marginStart = dp(5)
-                    }
-                    row.addView(makeGameTile(game), lp)
-                }
-                if (pair.size == 1) {
-                    row.addView(
-                        Space(this),
-                        LinearLayout.LayoutParams(0, dp(76), 1f).apply { marginStart = dp(5) }
-                    )
-                }
-                content.addView(row)
-                content.addSpace(6)
-            }
-        }
-
-        addRows(games.take(8))
-
-        content.addSpace(4)
-        content.addView(
-            text("新遊戲 ✨", 18f, coral, true, Gravity.START or Gravity.CENTER_VERTICAL),
-            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(38))
+        page.addView(makePageHeader("遊戲庫已整合"))
+        page.addView(
+            text(
+                "🎮 12 款遊戲已全部整合到首頁\n不再重複顯示相同遊戲",
+                20f,
+                brown,
+                true
+            ).apply {
+                maxLines = 3
+            },
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
         )
-        addRows(games.drop(8))
     }
 
 
@@ -2863,8 +3126,8 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
             return
         }
         // 跟讀示範再慢一點，但音高保持自然，避免機械/卡通感。
-        tts.setSpeechRate(0.80f)
-        tts.setPitch(1.02f)
+        tts.setSpeechRate(0.78f)
+        tts.setPitch(1.07f)
         tts.stop()
         tts.speak(
             pronunciationTarget,
@@ -2975,96 +3238,339 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
 
 private fun showTreasureMap(focus: MapFocus) {
     syncDailyMission()
-    root.removeAllViews()
-    root.setBackgroundColor(0xFFFFF5D8.toInt())
-
-    val scroll = ScrollView(this).apply {
-        isFillViewport = true
-        isVerticalScrollBarEnabled = false
-        overScrollMode = View.OVER_SCROLL_NEVER
+    if (focus == MapFocus.CHEST) {
+        showStarChestRewards()
+    } else {
+        showDailyMissionPage()
     }
+}
+
+private fun showDailyMissionPage() {
+    root.removeAllViews()
+    root.setBackgroundColor(0xFFF8FCEB.toInt())
+
     val page = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        setPadding(dp(10), dp(8), dp(10), dp(16))
+        setPadding(dp(12), dp(8), dp(12), dp(14))
     }
-    scroll.addView(page, FrameLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT,
-        ViewGroup.LayoutParams.WRAP_CONTENT
-    ))
-    root.addView(scroll)
-
-    page.addView(makePageHeader("冒險藏寶圖"))
-    page.addSpace(6)
-
-    val statusRow = LinearLayout(this).apply {
-        orientation = LinearLayout.HORIZONTAL
-        gravity = Gravity.CENTER
-    }
-    statusRow.addView(
-        makeAdventureStatusCard(
-            R.drawable.mission_calendar,
-            "每日任務",
-            "$dailyProgress/5",
-            if (focus == MapFocus.DAILY) 0xFFE6F6C9.toInt() else 0xFFF4F8E9.toInt(),
-            0xFF4D9E27.toInt()
-        ) { toastFeedback("完成任一遊戲或英文挑戰，就會增加今日進度") },
-        LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = dp(4) }
+    root.addView(
+        page,
+        FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        )
     )
-    statusRow.addView(
-        makeAdventureStatusCard(
-            R.drawable.mission_treasure,
-            "星星寶箱",
-            if (canOpenStarChest()) "可開啟!" else "${starChestProgress()}/30",
-            if (focus == MapFocus.CHEST) 0xFFFFE5A8.toInt() else 0xFFFFF1D4.toInt(),
-            0xFFE37500.toInt()
-        ) {
-            if (canOpenStarChest()) openStarChest()
-            else toastFeedback("再收集 ${30 - starChestProgress()} 顆星就能開箱！")
+
+    page.addView(makePageHeader("每日任務"))
+    page.addSpace(8)
+
+    page.addView(
+        text(
+            "✅ 今天完成 $dailyProgress / 5 個挑戰",
+            22f,
+            0xFF4D8E1D.toInt(),
+            true
+        ).apply {
+            background = rounded(0xFFEAF7CF.toInt(), 22)
         },
-        LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = dp(4) }
+        LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            dp(78)
+        )
     )
-    page.addView(statusRow)
-    page.addSpace(6)
+    page.addSpace(8)
 
-    val map = TreasureMapView(
-        context = this,
-        dailyProgress = dailyProgress,
-        chestReady = canOpenStarChest(),
-        gameTitles = GameType.values().take(8).map { it.title },
-        gameEmojis = GameType.values().take(8).map { it.emoji },
-        onNodeClick = { index ->
-            val adventureGames = GameType.values().take(8)
-            if (index in adventureGames.indices) {
-                root.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-                navigateTo(Screen.Game(adventureGames[index]))
+    val tasks = listOf(
+        "完成任一腦力遊戲",
+        "完成一題英文測驗",
+        "完成一題聽力挑戰",
+        "學會一個英文單字",
+        "完成一次發音練習"
+    )
+
+    tasks.forEachIndexed { index, task ->
+        val done = index < dailyProgress
+        page.addView(
+            text(
+                if (done) "✅ $task" else "⬜ $task",
+                18f,
+                if (done) 0xFF4C8F27.toInt() else brown,
+                true,
+                Gravity.START or Gravity.CENTER_VERTICAL
+            ).apply {
+                setPadding(dp(14), 0, dp(10), 0)
+                background = rounded(
+                    if (done) 0xFFE8F6D7.toInt() else Color.WHITE,
+                    18
+                )
+            },
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            ).apply {
+                setMargins(0, dp(4), 0, dp(4))
             }
-        },
-        onChestClick = {
-            if (canOpenStarChest()) openStarChest()
-            else toastFeedback("寶箱還沒集滿：${starChestProgress()}/30 ⭐")
-        }
-    )
-    page.addView(map, LinearLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT, dp(610)
-    ))
-    page.addSpace(7)
+        )
+    }
+}
 
-    val badgeCard = LinearLayout(this).apply {
+private fun showStarChestRewards() {
+    root.removeAllViews()
+    root.setBackgroundColor(0xFFFFF8E9.toInt())
+
+    val screenHeightDp = resources.configuration.screenHeightDp
+    val compact = screenHeightDp < 720
+
+    val page = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        background = rounded(0xFFFFF7E8.toInt(), 22, 0x22B38335, 1)
-        setPadding(dp(10), dp(8), dp(10), dp(8))
+        setPadding(dp(if (compact) 8 else 12), dp(6), dp(if (compact) 8 else 12), dp(8))
+    }
+    root.addView(
+        page,
+        FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        )
+    )
+
+    page.addView(
+        makePageHeader("星星寶箱"),
+        LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            dp(if (compact) 48 else 56)
+        )
+    )
+    page.addSpace(5)
+
+    val progress = starChestProgress()
+    val hero = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(dp(12), dp(6), dp(12), dp(6))
+        background = rounded(0xFFFFE7A8.toInt(), 22, 0x33E6A200, 1)
+
+        val chest = ImageView(this@MainActivity).apply {
+            setImageResource(R.drawable.mission_treasure)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+        }
+        addView(
+            chest,
+            LinearLayout.LayoutParams(
+                dp(if (compact) 72 else 92),
+                dp(if (compact) 72 else 92)
+            )
+        )
+
+        val words = LinearLayout(this@MainActivity).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(10), 0, 0, 0)
+        }
+        words.addView(
+            text(
+                "收集星星開寶箱",
+                if (compact) 18f else 21f,
+                brown,
+                true,
+                Gravity.START
+            ).apply { maxLines = 1 }
+        )
+        words.addView(
+            text(
+                "完成遊戲與英文挑戰，累積星星解鎖獎勵",
+                if (compact) 12f else 14f,
+                0xFF7A654E.toInt(),
+                false,
+                Gravity.START
+            ).apply { maxLines = 2 }
+        )
+        words.addView(
+            text(
+                "⭐ $progress / 30",
+                if (compact) 24f else 28f,
+                0xFFE57900.toInt(),
+                true,
+                Gravity.START
+            )
+        )
+        addView(words, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
+    }
+    page.addView(
+        hero,
+        LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            dp(if (compact) 96 else 118)
+        )
+    )
+    page.addSpace(6)
+
+    val rewards = listOf(
+        Triple(5, "小徽章", 0xFFE8F7D8.toInt()),
+        Triple(10, "貼紙", 0xFFFFECD6.toInt()),
+        Triple(15, "驚喜卡", 0xFFF0E2FF.toInt()),
+        Triple(20, "彩色徽章", 0xFFE1F0FF.toInt()),
+        Triple(25, "星星獎勵", 0xFFFFE3EA.toInt()),
+        Triple(30, "終極寶箱", 0xFFFFE8A4.toInt())
+    )
+
+    val grid = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+    }
+
+    rewards.chunked(2).forEach { pair ->
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+        pair.forEachIndexed { index, reward ->
+            val threshold = reward.first
+            val label = reward.second
+            val color = reward.third
+            val unlocked = progress >= threshold
+
+            val card = makeStarChestRewardCard(
+                threshold = threshold,
+                label = label,
+                color = color,
+                unlocked = unlocked,
+                compact = compact
+            ) {
+                when {
+                    threshold == 30 && canOpenStarChest() -> openStarChest()
+                    unlocked -> {
+                        playCorrectSound()
+                        toastFeedback("已解鎖：$label")
+                    }
+                    else -> toastFeedback("再收集 ${threshold - progress} 顆星即可解鎖「$label」")
+                }
+            }
+
+            row.addView(
+                card,
+                LinearLayout.LayoutParams(
+                    0,
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    1f
+                ).apply {
+                    if (index == 0) marginEnd = dp(4) else marginStart = dp(4)
+                }
+            )
+        }
+        grid.addView(
+            row,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            ).apply {
+                setMargins(0, dp(3), 0, dp(3))
+            }
+        )
+    }
+
+    page.addView(
+        grid,
+        LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            0,
+            1f
+        )
+    )
+
+    page.addSpace(4)
+    page.addView(
+        text(
+            "🏅 我的徽章　　已累積 ⭐ $stars",
+            if (compact) 14f else 16f,
+            brown,
+            true,
+            Gravity.START or Gravity.CENTER_VERTICAL
+        ).apply {
+            setPadding(dp(12), 0, dp(8), 0)
+            background = rounded(0xFFFFE9A9.toInt(), 18)
+            setOnClickListener { navigateTo(Screen.Achievements) }
+        },
+        LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            dp(if (compact) 42 else 48)
+        )
+    )
+}
+
+private fun makeStarChestRewardCard(
+    threshold: Int,
+    label: String,
+    color: Int,
+    unlocked: Boolean,
+    compact: Boolean,
+    onClick: () -> Unit
+): View {
+    return LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        gravity = Gravity.CENTER
+        setPadding(dp(5), dp(4), dp(5), dp(4))
+        background = rounded(color, if (compact) 17 else 22, Color.WHITE, 1)
+        elevation = dp(1).toFloat()
         isClickable = true
         isFocusable = true
-        setOnClickListener { navigateTo(Screen.Achievements) }
 
-        addView(text("🏅 我的徽章", 18f, brown, true, Gravity.START))
-        addView(makeTreasureBadgeStrip(), LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(66)
-        ))
+        addView(
+            text(
+                "${threshold}星",
+                if (compact) 13f else 15f,
+                if (unlocked) 0xFFE27900.toInt() else 0xFF777777.toInt(),
+                true
+            ).apply {
+                maxLines = 1
+                setPadding(0, 0, 0, 0)
+            },
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                0,
+                0.55f
+            )
+        )
+
+        // 每一個獎勵都使用「寶箱」drawable，不再使用關卡節點/旗幟。
+        val chest = ImageView(this@MainActivity).apply {
+            setImageResource(R.drawable.mission_treasure)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            alpha = if (unlocked) 1f else 0.55f
+        }
+        addView(
+            chest,
+            LinearLayout.LayoutParams(
+                dp(if (compact) 48 else 62),
+                0,
+                1.25f
+            )
+        )
+
+        addView(
+            text(
+                if (unlocked) label else "🔒 $label",
+                if (compact) 12f else 14f,
+                brown,
+                true
+            ).apply {
+                maxLines = 1
+                setPadding(dp(2), 0, dp(2), 0)
+                TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
+                    this, 9, if (compact) 13 else 15, 1, TypedValue.COMPLEX_UNIT_SP
+                )
+            },
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                0,
+                0.7f
+            )
+        )
+
+        setOnClickListener {
+            performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+            onClick()
+        }
     }
-    page.addView(badgeCard, LinearLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT, dp(104)
-    ))
 }
 
 private fun makeAdventureStatusCard(
