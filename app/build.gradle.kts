@@ -23,8 +23,8 @@ android {
         applicationId = "com.boga.kidgame"
         minSdk = 24
         targetSdk = 35
-        versionCode = 35
-        versionName = "0.8.2"
+        versionCode = 36
+        versionName = "0.8.3"
     }
 
     val stableSigningConfig = if (hasStableSigning) {

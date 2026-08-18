@@ -1,37 +1,40 @@
-# 小小腦力樂園 v0.8.2
+# 小小腦力樂園 v0.8.3
 
-## v0.8.2 修正
+## 聲音
+所有 TTS 呼叫共用同一套「輕柔女聲優先」：
+- 中文、英文、首頁遊戲名稱、題目自動朗讀、重播、單字、聽力、測驗、發音示範都會先跑同一個女聲 Voice 選擇。
+- 明確 female / woman / girl / feminine / fem voice 強力優先。
+- 明確 male / man voice 強力降權。
+- 女聲內再優先 neural / natural / premium / enhanced / wavenet / studio。
+- 中文速度 0.85，pitch 1.055。
+- 英文速度 0.83，pitch 1.045。
+- 跟讀示範速度 0.76，pitch 1.045。
+- TTS volume 0.92，降低過硬的電子感。
 
-### 首頁
-- 12 款遊戲全部直接整合到首頁。
-- 4 欄 × 3 列，依螢幕高度自動進入 compact / veryCompact。
-- 首頁不使用 ScrollView，維持單一頁面。
-- 移除首頁「遊戲庫 12款」重複入口。
-- 舊 GameLibrary 畫面若被 navigation stack 呼叫，只顯示「已整合」說明，不再重複 12 款遊戲。
-- 修正 Android 狀態列遮住「小小腦力樂園」標題。
+> Android TTS 沒有統一 gender API；如果手機的 TTS 引擎完全沒有女聲 Voice，
+> App 只能選同語系最高品質 Voice，再套輕微的女老師音高設定。
 
-### 星星寶箱
-- 星星寶箱完全取消關卡/冒險地圖節點。
-- 改成 5 / 10 / 15 / 20 / 25 / 30 星的寶箱獎勵格。
-- 所有獎勵都使用 `mission_treasure` 寶箱圖示。
-- 30 星可開終極寶箱並沿用既有徽章機制。
-- 每日任務改為簡單任務清單，不再共用關卡地圖。
+## 圖層 / 被擋內容修正
+依 Samsung 實機首頁截圖重新檢查：
+- 每日任務與星星寶箱的 0/5、0/30 原本會被卡片下緣切掉。
+- 原因：任務卡高度過低，且 title/value 被固定切成上下各 50%。
+- 任務卡高度提高為 72 / 78 / 86dp。
+- title/value 改為 WRAP_CONTENT，不再用 0dp + weight 各半。
+- 任務 icon 稍縮，文字保留完整 font padding。
+- 毛孩區略縮，仍維持單一頁面。
+- 毛孩與第一列遊戲增加安全間距。
+- 12款遊戲 Grid 開啟 clipChildren/clipToPadding，避免不同列 elevation/文字互蓋。
+- 遊戲 icon 稍縮，保留標題垂直空間。
+- 英文分類卡 Emoji 底部 padding 再增加，避免 Samsung Emoji 下緣裁切。
+- 英文分類卡仍維持 WRAP_CONTENT，沒有恢復固定副標題高度。
 
-### 女聲
-- TTS 明確優先 `female / woman / girl / fem` voice。
-- 同語言、同國家優先。
-- 女聲中再優先 neural / natural / wavenet / studio / premium / enhanced 高品質 voice。
-- 明確 male / man voice 大幅降權。
-- 若裝置沒有 gender 標記，改選同語系最高品質 voice。
-- 中文速度 0.88 / pitch 1.08。
-- 美式英文速度 0.86 / pitch 1.07。
-- 跟讀示範速度 0.78 / pitch 1.07。
-
-### 其他
-- 保留「數學練習」名稱。
-- 保留英文分類、阿拉伯數字、題目朗讀、答對音效。
-- 保留固定 APK 簽名；原本 4 個 GitHub Secrets 不用重設。
+## 其他
+- 12 款遊戲仍全部在首頁。
+- 不重複顯示遊戲庫。
+- 星星寶箱維持寶箱獎勵制，不使用關卡。
+- 數學名稱維持「數學練習」。
+- 固定 APK 簽名保留，原本 4 個 GitHub Secrets 不用重設。
 
 ## Version
-- versionCode = 35
-- versionName = 0.8.2
+- versionCode = 36
+- versionName = 0.8.3

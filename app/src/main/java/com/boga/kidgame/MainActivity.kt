@@ -39,7 +39,7 @@ import kotlin.random.Random
 
 class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
-    // BUILD_MARKER_v0_8_2 — GitHub 上搜尋到這行才代表真的在編譯 0.8.0。
+    // BUILD_MARKER_v0_8_3 — GitHub 上搜尋到這行才代表真的在編譯 0.8.0。
 
     private enum class GameType(val title: String, val emoji: String, val subtitle: String) {
         FIND("找一找", "🔍", "專注搜尋"),
@@ -248,6 +248,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private fun configureTtsLocale(preferred: Locale): Boolean {
         if (!ttsReady) return false
         val locale = supportedLocale(preferred) ?: return false
+
         val result = runCatching { tts.setLanguage(locale) }
             .getOrDefault(TextToSpeech.LANG_NOT_SUPPORTED)
         if (result == TextToSpeech.LANG_MISSING_DATA ||
@@ -256,15 +257,9 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
 
         val isEnglish = locale.language == Locale.ENGLISH.language
 
-        // v0.8.2：明確「女聲優先」。
-        // Android 不同 TTS 引擎沒有統一 gender 欄位，因此同時檢查 voice.name + features。
-        // 選擇順序：
-        // 1. 同語言 / 同國家
-        // 2. 明確 female / woman / girl / fem 女聲標記
-        // 3. neural / natural / premium / enhanced 等真人感較高 voice
-        // 4. 高 quality
-        // 若手機沒有標示性別的 voice，仍選同語系最高品質 voice，
-        // 再用非常輕微的 pitch 調整維持偏女老師的聲線，不做卡通化拉高。
+        // v0.8.3：所有朗讀統一使用「輕柔女聲優先」。
+        // Android TTS 沒有跨引擎統一的 gender 欄位，所以用 Voice 名稱、features、
+        // 語系、quality 綜合評分。若裝置有明確 female voice，會強制優先。
         val matchingVoices = tts.voices
             ?.filter { voice ->
                 voice.locale.language.equals(locale.language, ignoreCase = true)
@@ -272,40 +267,62 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             .orEmpty()
 
         val preferredVoice = matchingVoices.maxByOrNull { voice ->
-            val featureText = voice.features.orEmpty().joinToString(" ").lowercase(Locale.ROOT)
             val name = voice.name.lowercase(Locale.ROOT)
-            val descriptor = "$name $featureText"
+            val features = voice.features.orEmpty()
+                .joinToString(" ")
+                .lowercase(Locale.ROOT)
+            val descriptor = "$name $features"
 
             val explicitFemale =
                 "female" in descriptor ||
                 "woman" in descriptor ||
                 "girl" in descriptor ||
+                "feminine" in descriptor ||
+                "voice_f" in descriptor ||
+                "voice-f" in descriptor ||
                 Regex("(^|[-_# .])fem($|[-_# .])").containsMatchIn(descriptor)
 
-            // 避免把 female 裡的 male 誤判成男聲。
+            // female 內含 male 字串，因此只有 explicitFemale=false 時才判定 male。
             val explicitMale =
                 !explicitFemale &&
                 (
                     Regex("(^|[-_# .])male($|[-_# .])").containsMatchIn(descriptor) ||
-                    Regex("(^|[-_# .])man($|[-_# .])").containsMatchIn(descriptor)
+                    Regex("(^|[-_# .])man($|[-_# .])").containsMatchIn(descriptor) ||
+                    "masculine" in descriptor
                 )
 
-            var score = voice.quality * 20
+            val naturalQuality =
+                "neural" in descriptor ||
+                "natural" in descriptor ||
+                "wavenet" in descriptor ||
+                "studio" in descriptor ||
+                "premium" in descriptor ||
+                "enhanced" in descriptor ||
+                "high quality" in descriptor
 
+            var score = voice.quality * 24
+
+            // 同國家語音優先，例如 zh-TW / en-US。
             if (locale.country.isNotBlank() &&
                 voice.locale.country.equals(locale.country, ignoreCase = true)
-            ) score += 1800
+            ) {
+                score += 2400
+            }
 
-            if (explicitFemale) score += 12000
-            if (explicitMale) score -= 12000
+            // 女聲權重遠高於其他項目，避免選到品質高但明確是男聲的 voice。
+            if (explicitFemale) score += 18000
+            if (explicitMale) score -= 18000
 
-            if ("neural" in descriptor || "natural" in descriptor ||
-                "wavenet" in descriptor || "studio" in descriptor ||
-                "premium" in descriptor || "enhanced" in descriptor
-            ) score += 2600
+            // 女聲之中再挑真人感較佳的 neural / natural 類 voice。
+            if (naturalQuality) score += 4200
 
-            if ("network" in descriptor || voice.isNetworkConnectionRequired) score += 350
-            if ("compact" in descriptor || "legacy" in descriptor || "low" in descriptor) score -= 1500
+            // 網路型 voice 通常品質較高，但不強制，離線 voice 仍可正常運作。
+            if (voice.isNetworkConnectionRequired || "network" in descriptor) score += 500
+
+            // 舊式 compact / legacy / low-quality voice 降權。
+            if ("compact" in descriptor || "legacy" in descriptor || "low quality" in descriptor) {
+                score -= 2200
+            }
 
             score
         }
@@ -314,14 +331,15 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             runCatching { tts.voice = preferredVoice }
         }
 
-        // 真人女老師感：語速略慢、音高只微幅提高。
-        tts.setSpeechRate(if (isEnglish) 0.86f else 0.88f)
-        tts.setPitch(if (isEnglish) 1.07f else 1.08f)
+        // 「輕柔女老師」設定：
+        // 不再用過高 pitch 模仿小孩，避免電子感；語速稍慢、音高只小幅提高。
+        tts.setSpeechRate(if (isEnglish) 0.83f else 0.85f)
+        tts.setPitch(if (isEnglish) 1.045f else 1.055f)
         return true
     }
 
     private fun speechParams(): Bundle = Bundle().apply {
-        putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f)
+        putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 0.92f)
     }
 
     private fun speakWithLocale(
@@ -490,16 +508,19 @@ private fun showHome() {
     val outerPad = if (veryCompact) 5 else if (compact) 7 else 9
     val gap = if (veryCompact) 2 else 3
     val headerHeight = if (veryCompact) 44 else if (compact) 50 else 58
-    val missionHeight = if (veryCompact) 56 else if (compact) 62 else 72
-    val petHeight = if (veryCompact) 72 else if (compact) 88 else 108
+    // v0.8.3：任務卡在 Samsung 實機因字型 ascender/descender 較高，
+    // 56/62dp 會把 0/5、0/30 下緣裁掉，因此提高任務區高度；
+    // 同時略縮毛孩區，總高度仍維持單頁。
+    val missionHeight = if (veryCompact) 72 else if (compact) 78 else 86
+    val petHeight = if (veryCompact) 66 else if (compact) 80 else 96
     val englishHeight = if (veryCompact) 40 else if (compact) 44 else 50
     val badgeHeight = if (veryCompact) 38 else if (compact) 42 else 46
 
     val content = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
         setPadding(dp(outerPad), dp(gap), dp(outerPad), dp(gap))
-        clipChildren = false
-        clipToPadding = false
+        clipChildren = true
+        clipToPadding = true
     }
     root.addView(
         content,
@@ -555,7 +576,7 @@ private fun showHome() {
             dp(missionHeight)
         )
     )
-    content.addSpace(gap)
+    content.addSpace(if (veryCompact) 3 else 5)
 
     val pets = ImageView(this).apply {
         setImageResource(R.drawable.home_pets)
@@ -572,21 +593,22 @@ private fun showHome() {
             dp(petHeight)
         )
     )
-    content.addSpace(gap)
+    // 毛孩圖片與第一列遊戲卡完全分層，不讓 elevation / 字型超出造成視覺重疊。
+    content.addSpace(if (veryCompact) 4 else 6)
 
     // 12 款遊戲直接整合到首頁：4欄 × 3列。
     // 不再另外放「遊戲庫 12款」入口，因此不存在經典8款在遊戲庫重複顯示的問題。
     val gameGrid = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        clipChildren = false
-        clipToPadding = false
+        clipChildren = true
+        clipToPadding = true
     }
     val allGames = GameType.values().toList()
     repeat(3) { rowIndex ->
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            clipChildren = false
-            clipToPadding = false
+            clipChildren = true
+            clipToPadding = true
         }
         repeat(4) { col ->
             val index = rowIndex * 4 + col
@@ -787,43 +809,80 @@ private fun makeHomeMissionCard(
         addView(
             icon,
             LinearLayout.LayoutParams(
-                dp(if (compact) 38 else 50),
-                dp(if (compact) 38 else 50)
+                dp(if (compact) 36 else 46),
+                dp(if (compact) 36 else 46)
             )
         )
 
         val words = LinearLayout(this@MainActivity).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(if (compact) 6 else 8), 0, 0, 0)
+            setPadding(dp(if (compact) 6 else 8), dp(3), 0, dp(3))
+            clipChildren = false
+            clipToPadding = false
         }
+
+        val titleView = text(
+            title,
+            if (compact) 12.5f else 14.5f,
+            0xFF4A2E1D.toInt(),
+            true,
+            Gravity.START or Gravity.CENTER_VERTICAL
+        ).apply {
+            maxLines = 1
+            includeFontPadding = true
+            setPadding(0, dp(1), 0, dp(1))
+            TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
+                this,
+                10,
+                if (compact) 13 else 15,
+                1,
+                TypedValue.COMPLEX_UNIT_SP
+            )
+        }
+
+        val valueView = text(
+            value,
+            if (compact) 16.5f else 19f,
+            valueColor,
+            true,
+            Gravity.START or Gravity.CENTER_VERTICAL
+        ).apply {
+            maxLines = 1
+            includeFontPadding = true
+            setPadding(0, dp(1), 0, dp(2))
+            TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
+                this,
+                13,
+                if (compact) 18 else 20,
+                1,
+                TypedValue.COMPLEX_UNIT_SP
+            )
+        }
+
+        // WRAP_CONTENT 由字型實際高度決定，不再硬切成上下各 50%。
         words.addView(
-            text(
-                title,
-                if (compact) 13f else 15f,
-                0xFF4A2E1D.toInt(),
-                true,
-                Gravity.START or Gravity.CENTER_VERTICAL
-            ).apply {
-                maxLines = 1
-                setPadding(0, 0, 0, 0)
-            },
-            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
+            titleView,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
         )
         words.addView(
-            text(
-                value,
-                if (compact) 18f else 21f,
-                valueColor,
-                true,
-                Gravity.START or Gravity.CENTER_VERTICAL
-            ).apply {
-                maxLines = 1
-                setPadding(0, 0, 0, 0)
-            },
-            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
+            valueView,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
         )
-        addView(words, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
+        addView(
+            words,
+            LinearLayout.LayoutParams(
+                0,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                1f
+            )
+        )
 
         setOnClickListener {
             performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
@@ -838,13 +897,15 @@ private fun makeCompactHomeGameTile(game: GameType, compact: Boolean): View {
         gravity = Gravity.CENTER
         background = rounded(gameCardColor(game), if (compact) 13 else 17, Color.WHITE, 1)
         elevation = dp(1).toFloat()
-        setPadding(dp(2), dp(2), dp(2), dp(1))
+        setPadding(dp(2), dp(3), dp(2), dp(3))
+        clipChildren = true
+        clipToPadding = true
         isClickable = true
         isFocusable = true
         contentDescription = game.title
     }
 
-    val iconSize = if (compact) 34 else 42
+    val iconSize = if (compact) 31 else 38
     tile.addView(
         makeGameRoundIcon(game),
         LinearLayout.LayoutParams(dp(iconSize), dp(iconSize))
@@ -2287,7 +2348,7 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
                 // 不裁切任何子 View。實際高度由內容決定，不再用固定 170dp。
                 clipChildren = false
                 clipToPadding = false
-                minimumHeight = dp(176)
+                minimumHeight = dp(180)
             }
 
             val iconBox = text(heroEmoji, 50f, Color.BLACK, false).apply {
@@ -2355,8 +2416,8 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
                 maxLines = 1
                 includeFontPadding = true
                 // Samsung Emoji 字型的下緣需要額外空間，避免圖案底部被切。
-                setPadding(dp(2), dp(6), dp(2), dp(9))
-                minHeight = dp(48)
+                setPadding(dp(2), dp(7), dp(2), dp(12))
+                minHeight = dp(52)
             }
 
             // 三個 View 全部 WRAP_CONTENT；沒有任何互相覆蓋的固定圖層。
@@ -2656,7 +2717,7 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
                 contentDescription = categoryName
                 clipChildren = false
                 clipToPadding = false
-                minimumHeight = dp(170)
+                minimumHeight = dp(176)
             }
 
             val iconBox = text(heroEmoji, 48f).apply {
@@ -3126,8 +3187,8 @@ private fun makeTopCounter(iconRes: Int, value: String): View {
             return
         }
         // 跟讀示範再慢一點，但音高保持自然，避免機械/卡通感。
-        tts.setSpeechRate(0.78f)
-        tts.setPitch(1.07f)
+        tts.setSpeechRate(0.76f)
+        tts.setPitch(1.045f)
         tts.stop()
         tts.speak(
             pronunciationTarget,
